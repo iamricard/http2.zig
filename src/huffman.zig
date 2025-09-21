@@ -275,7 +275,9 @@ pub const Huffman = struct {
 
         var bit_buffer: u64 = 0;
         var bit_count: u6 = 0;
-        var encoded = std.ArrayList(u8).init(allocator);
+        // TODO: https://ziglang.org/download/0.15.1/release-notes.html#ArrayList-make-unmanaged-the-default
+        // Warning: these will both eventually be removed entirely (in reference to `Managed`).
+        var encoded = std.array_list.Managed(u8).init(allocator);
         defer encoded.deinit();
 
         for (input) |byte| {
@@ -310,7 +312,9 @@ pub const Huffman = struct {
         std.debug.assert(input.len <= 16384); // Reasonable input size limit
         std.debug.assert(@intFromPtr(&allocator) != 0);
 
-        var decoded = std.ArrayList(u8).init(allocator);
+        // TODO: https://ziglang.org/download/0.15.1/release-notes.html#ArrayList-make-unmanaged-the-default
+        // Warning: these will both eventually be removed entirely (in reference to `Managed`).
+        var decoded = std.array_list.Managed(u8).init(allocator);
         defer decoded.deinit();
 
         var bit_buffer: u64 = 0;

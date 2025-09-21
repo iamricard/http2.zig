@@ -8,7 +8,7 @@
     // This field is optional.
     // This is currently advisory only; Zig does not yet do anything
     // with this value.
-    .minimum_zig_version = "0.13.0",
+    .minimum_zig_version = "0.16.0-dev.254+6dd0270a1",
 
     // This field is optional.
     // Each dependency must either provide a `url` and `hash`, or a `path`.
@@ -17,8 +17,8 @@
     // internet connectivity.
     .dependencies = .{
         .libxev = .{
-            .url = "https://github.com/zen-eth/libxev/archive/68f5dc7c512269d83b952d4bbda94c3c1bf4e4c6.tar.gz",
-            .hash = "libxev-0.0.0-86vtc2odEwBDzC8p8WoJl4IPhkBGNijDyppIFakxEzaL",
+            .url = "https://github.com/iamricard/libxev/archive/73003fa39091b85a11dcb7cb33d6e761c88f411f.tar.gz",
+            .hash = "libxev-0.0.0-86vtc24dEwAlHnw9eCu850ccUeuAUtYHoRiWstfoPr73",
         },
     },
 

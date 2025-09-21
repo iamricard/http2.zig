@@ -130,7 +130,7 @@ pub fn Stream(comptime WindowBits: u5, comptime MaxStreams: u31) type {
             // Core stream identification and state
             id: u32,
             state: StreamState,
-            conn: *Connection(std.io.AnyReader, std.io.AnyWriter),
+            conn: *Connection,
 
             // Flow control with compile-time optimized window sizes
             recv_window_size: i32,
@@ -153,7 +153,7 @@ pub fn Stream(comptime WindowBits: u5, comptime MaxStreams: u31) type {
 
             // Header processing state
             expecting_continuation: bool,
-            headers: std.BoundedArray(Hpack.HeaderField, 64), // Bounded for performance
+            headers: std.ArrayListUnmanaged(Hpack.HeaderField), // Bounded for performance
             content_length: ?usize,
             total_data_received: usize,
             request_complete: bool,
@@ -165,7 +165,9 @@ pub fn Stream(comptime WindowBits: u5, comptime MaxStreams: u31) type {
             weight: u16,
 
             // Compile-time optimized initialization
-            pub fn init(self: *Self.StreamInstance, conn: *Connection(std.io.AnyReader, std.io.AnyWriter), id: u32) void {
+            pub fn init(self: *Self.StreamInstance, conn: *Connection, id: u32) void {
+                var hbuf: [64]Hpack.HeaderField = undefined;
+
                 self.* = Self.StreamInstance{
                     .id = id,
                     .state = .Idle,
@@ -189,7 +191,7 @@ pub fn Stream(comptime WindowBits: u5, comptime MaxStreams: u31) type {
                     .header_block_fragments_len = 0,
 
                     .expecting_continuation = false,
-                    .headers = std.BoundedArray(Hpack.HeaderField, 64).init(0) catch unreachable,
+                    .headers = std.ArrayListUnmanaged(Hpack.HeaderField).initBuffer(&hbuf),
                     .content_length = null,
                     .total_data_received = 0,
                     .request_complete = false,
@@ -229,7 +231,7 @@ pub fn Stream(comptime WindowBits: u5, comptime MaxStreams: u31) type {
                 }
 
                 // Reset bounded array without deallocation
-                self.headers.len = 0;
+                self.headers.items.len = 0;
                 self.cleaned_up = true;
             }
 
@@ -579,7 +581,7 @@ pub fn Stream(comptime WindowBits: u5, comptime MaxStreams: u31) type {
                 // This is critical for HTTP/2 flow control
                 if (frame.header.length > 0) {
                     try self.conn.send_window_update(self.id, @intCast(frame.header.length));
-                    log.debug("Sent WINDOW_UPDATE for stream {} with increment {}", .{self.id, frame.header.length});
+                    log.debug("Sent WINDOW_UPDATE for stream {} with increment {}", .{ self.id, frame.header.length });
                 }
 
                 if (frame.header.flags.isEndStream()) {
@@ -678,11 +680,11 @@ pub fn Stream(comptime WindowBits: u5, comptime MaxStreams: u31) type {
                 const header_block = self.header_block_fragments_buf[0..self.header_block_fragments_len];
 
                 // Clear existing headers efficiently
-                for (self.headers.slice()) |header| {
+                for (self.headers.items) |header| {
                     self.conn.allocator.free(header.name);
                     self.conn.allocator.free(header.value);
                 }
-                self.headers.len = 0;
+                self.headers.items.len = 0;
 
                 var cursor: usize = 0;
                 while (cursor < header_block.len) {
@@ -696,7 +698,7 @@ pub fn Stream(comptime WindowBits: u5, comptime MaxStreams: u31) type {
 
                     // Filter out empty headers from HPACK dynamic table size updates
                     if (decoded_header.header.name.len > 0) {
-                        if (self.headers.len >= 64) {
+                        if (self.headers.items.len >= 64) {
                             log.err("Too many headers: INTERNAL_ERROR\n", .{});
                             try self.sendRstStream(0x2); // INTERNAL_ERROR
                             return error.TooManyHeaders;
@@ -713,7 +715,7 @@ pub fn Stream(comptime WindowBits: u5, comptime MaxStreams: u31) type {
                     cursor += decoded_header.bytes_consumed;
                 }
 
-                try self.validateHeaders(self.headers.slice());
+                try self.validateHeaders(self.headers.items);
             }
 
             fn validateHeaders(self: *Self.StreamInstance, headers: []Hpack.HeaderField) !void {

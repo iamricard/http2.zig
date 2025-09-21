@@ -330,7 +330,9 @@ pub const Hpack = struct {
     }
     // HPACK integer encoding based on RFC 7541 (Section 5.1)
 
-    pub fn encodeInt(value: usize, prefix_size: u8, buffer: *std.ArrayList(u8), prefix_value: u8) !void {
+    // TODO: https://ziglang.org/download/0.15.1/release-notes.html#ArrayList-make-unmanaged-the-default
+    // Warning: these will both eventually be removed entirely (in reference to `Managed`).
+    pub fn encodeInt(value: usize, prefix_size: u8, buffer: *std.array_list.Managed(u8), prefix_value: u8) !void {
         assert(prefix_size >= 1);
         assert(prefix_size <= 8);
         assert(@intFromPtr(buffer) != 0);
@@ -352,7 +354,9 @@ pub const Hpack = struct {
         }
     }
 
-    pub fn encodeString(str: []const u8, buffer: *std.ArrayList(u8)) !void {
+    // TODO: https://ziglang.org/download/0.15.1/release-notes.html#ArrayList-make-unmanaged-the-default
+    // Warning: these will both eventually be removed entirely (in reference to `Managed`).
+    pub fn encodeString(str: []const u8, buffer: *std.array_list.Managed(u8)) !void {
         assert(str.len <= MAX_HEADER_LIST_SIZE);
         assert(@intFromPtr(buffer) != 0);
 
@@ -372,7 +376,9 @@ pub const Hpack = struct {
     pub fn encodeHeaderField(
         field: HeaderField,
         dynamic_table: *DynamicTable,
-        buffer: *std.ArrayList(u8),
+        // TODO: https://ziglang.org/download/0.15.1/release-notes.html#ArrayList-make-unmanaged-the-default
+        // Warning: these will both eventually be removed entirely (in reference to `Managed`).
+        buffer: *std.array_list.Managed(u8),
     ) !void {
         assert(field.name.len > 0);
         assert(field.name.len <= MAX_HEADER_LIST_SIZE);
@@ -697,7 +703,9 @@ test "Dynamic table indexing conforms to HPACK specification" {
     const field1 = Hpack.HeaderField.init("custom-header1", "value1");
     const field2 = Hpack.HeaderField.init("custom-header2", "value2");
     // Encode header fields
-    var buffer = std.ArrayList(u8).init(allocator);
+    // TODO: https://ziglang.org/download/0.15.1/release-notes.html#ArrayList-make-unmanaged-the-default
+    // Warning: these will both eventually be removed entirely (in reference to `Managed`).
+    var buffer = std.array_list.Managed(u8).init(allocator);
     defer buffer.deinit();
     _ = try Hpack.encodeHeaderField(field1, &dynamic_table, &buffer);
     _ = try Hpack.encodeHeaderField(field2, &dynamic_table, &buffer);
@@ -707,7 +715,9 @@ test "Dynamic table indexing conforms to HPACK specification" {
     const index1 = Hpack.StaticTable.entries.len + 2; // First dynamic entry
     const index2 = Hpack.StaticTable.entries.len + 1; // Second dynamic entry
     // Decode header fields using their indices
-    var index_buffer = std.ArrayList(u8).init(allocator);
+    // TODO: https://ziglang.org/download/0.15.1/release-notes.html#ArrayList-make-unmanaged-the-default
+    // Warning: these will both eventually be removed entirely (in reference to `Managed`).
+    var index_buffer = std.array_list.Managed(u8).init(allocator);
     defer index_buffer.deinit();
     // Encode index2
     {
@@ -755,7 +765,9 @@ test "HPACK decoding of RFC 7541 C.3.1 First Request" {
         0xff, // Huffman-encoded "www.example.com"
     };
     var payload = header_block[0..];
-    var headers = std.ArrayList(Hpack.HeaderField).init(allocator);
+    // TODO: https://ziglang.org/download/0.15.1/release-notes.html#ArrayList-make-unmanaged-the-default
+    // Warning: these will both eventually be removed entirely (in reference to `Managed`).
+    var headers = std.array_list.Managed(Hpack.HeaderField).init(allocator);
     defer {
         for (headers.items) |header| {
             allocator.free(header.name);
@@ -800,7 +812,9 @@ test "HPACK encoding and decoding of :status and content-length using static tab
     const status_field = Hpack.HeaderField.init(":status", "200");
     const content_length_field = Hpack.HeaderField.init("content-length", "13");
     // Encode :status and content-length headers
-    var buffer = std.ArrayList(u8).init(allocator);
+    // TODO: https://ziglang.org/download/0.15.1/release-notes.html#ArrayList-make-unmanaged-the-default
+    // Warning: these will both eventually be removed entirely (in reference to `Managed`).
+    var buffer = std.array_list.Managed(u8).init(allocator);
     defer buffer.deinit();
     // Check if :status is in the static table
     if (Hpack.StaticTable.getStaticIndex(status_field.name, status_field.value)) |idx| {
@@ -817,7 +831,9 @@ test "HPACK encoding and decoding of :status and content-length using static tab
     // Ensure buffer contains encoded data
     try std.testing.expect(buffer.items.len > 0);
     // Decode the headers
-    var headers_list = std.ArrayList(Hpack.HeaderField).init(allocator);
+    // TODO: https://ziglang.org/download/0.15.1/release-notes.html#ArrayList-make-unmanaged-the-default
+    // Warning: these will both eventually be removed entirely (in reference to `Managed`).
+    var headers_list = std.array_list.Managed(Hpack.HeaderField).init(allocator);
     defer {
         for (headers_list.items) |header| {
             allocator.free(header.name);

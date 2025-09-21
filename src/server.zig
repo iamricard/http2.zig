@@ -43,7 +43,9 @@ pub const Server = struct {
     accept_active: std.atomic.Value(bool),
 
     // Connection management
-    connections: std.ArrayList(*Connection),
+    // TODO: https://ziglang.org/download/0.15.1/release-notes.html#ArrayList-make-unmanaged-the-default
+    // Warning: these will both eventually be removed entirely (in reference to `Managed`).
+    connections: std.array_list.Managed(*Connection),
     connection_pool: ConnectionPool,
 
     // Statistics
@@ -122,7 +124,9 @@ pub const Server = struct {
             .accept_completions = [2]xev.Completion{ .{}, .{} },
             .current_accept_completion = std.atomic.Value(u8).init(0),
             .accept_active = std.atomic.Value(bool).init(false),
-            .connections = std.ArrayList(*Connection).init(allocator),
+            // TODO: https://ziglang.org/download/0.15.1/release-notes.html#ArrayList-make-unmanaged-the-default
+            // Warning: these will both eventually be removed entirely (in reference to `Managed`).
+            .connections = std.array_list.Managed(*Connection).init(allocator),
             .connection_pool = try ConnectionPool.init(allocator, config.max_connections, config.buffer_size),
             .stats = Stats.init(),
         };
@@ -402,7 +406,7 @@ pub const Server = struct {
         // Check for active operations BEFORE doing any cleanup
         const read_active = conn.read_active.load(.acquire);
         const write_active = conn.write_active.load(.acquire);
-        
+
         std.log.debug("closeConnection called - read_active: {}, write_active: {}, write_pos: {}", .{ read_active, write_active, conn.write_pos });
 
         if (read_active or write_active) {
@@ -415,13 +419,13 @@ pub const Server = struct {
 
         // Mark as inactive first to prevent further operations
         conn.active = false;
-        
+
         // Clean up HTTP/2 protocol connection (disabled - using direct frame processing)
         // if (conn.h2_conn) |*h2_conn| {
         //     h2_conn.deinit();
         //     conn.h2_conn = null;
         // }
-        // 
+        //
         // // Clean up adapters
         // if (conn.h2_reader) |reader| {
         //     self.allocator.destroy(reader);
@@ -431,10 +435,10 @@ pub const Server = struct {
         //     self.allocator.destroy(writer);
         //     conn.h2_writer = null;
         // }
-        
+
         // Clean up stream state
         conn.active_streams.deinit();
-        
+
         // Clean up TLS write queue
         conn.tls_queue_mutex.lock();
         for (conn.tls_write_queue.items) |queued_data| {
@@ -502,7 +506,7 @@ const Connection = struct {
     // h2_conn: ?Http2Connection,  // Disabled - using direct frame processing
     // h2_reader: ?*IoAdapters.Reader,  // Disabled
     // h2_writer: ?*IoAdapters.Writer,  // Disabled
-    
+
     // Connection state
     active: bool,
     http2_initialized: bool, // Track if HTTP/2 connection has been initialized
@@ -510,7 +514,7 @@ const Connection = struct {
     tls_handshake_attempts: u32, // Track handshake retry attempts
     close_after_write: bool, // Mark connection for closure after writes complete
     negotiated_protocol: ?[]const u8, // ALPN negotiated protocol
-    
+
     // HTTP/2 stream management
     next_stream_id: u32, // Track stream IDs for proper multiplexing
     active_streams: std.AutoHashMap(u32, StreamState), // Track active streams
@@ -525,14 +529,16 @@ const Connection = struct {
     // Completion state tracking for safety
     read_active: std.atomic.Value(bool),
     write_active: std.atomic.Value(bool),
-    
+
     // TLS operation state for async callbacks
     tls_write_pending: std.atomic.Value(bool),
     tls_operation_scheduled: std.atomic.Value(bool),
     tls_write_retry_count: std.atomic.Value(u32),
-    
+
     // TLS write queue for handling multiple concurrent HTTP/2 streams
-    tls_write_queue: std.ArrayList([]u8),
+    // TODO: https://ziglang.org/download/0.15.1/release-notes.html#ArrayList-make-unmanaged-the-default
+    // Warning: these will both eventually be removed entirely (in reference to `Managed`).
+    tls_write_queue: std.array_list.Managed([]u8),
     tls_queue_mutex: std.Thread.Mutex,
 
     const Self = @This();
@@ -542,33 +548,33 @@ const Connection = struct {
     /// Initialize HTTP/2 protocol connection asynchronously
     fn initHttp2Connection(self: *Self) !void {
         std.debug.assert(self.active);
-        
+
         // Skip if already initialized
         if (self.http2_initialized) {
             return;
         }
-        
+
         // Check if we have HTTP/2 preface
         const preface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
-        
+
         if (self.read_pos >= preface.len) {
             if (std.mem.eql(u8, self.read_buffer[0..preface.len], preface)) {
                 std.log.debug("HTTP/2 preface received, initializing connection", .{});
-                
+
                 // Remove preface from buffer
                 const remaining = self.read_pos - preface.len;
                 if (remaining > 0) {
                     std.mem.copyForwards(u8, self.read_buffer[0..remaining], self.read_buffer[preface.len..self.read_pos]);
                 }
                 self.read_pos = @intCast(remaining);
-                
+
                 // Send initial SETTINGS frame as per HTTP/2 spec
                 const settings_frame = "\x00\x00\x00\x04\x00\x00\x00\x00\x00"; // Empty SETTINGS frame
                 try self.writeData(settings_frame);
-                
+
                 // Mark as initialized
                 self.http2_initialized = true;
-                
+
                 std.log.debug("HTTP/2 connection initialized with SETTINGS frame", .{});
             } else {
                 std.log.err("Invalid HTTP/2 preface received", .{});
@@ -580,11 +586,11 @@ const Connection = struct {
             return;
         }
     }
-    
+
     /// Process available data through simplified HTTP/2 frame handling
     fn processHttp2(self: *Self) !void {
         std.log.debug("processHttp2: Starting with {} bytes in buffer", .{self.read_pos});
-        
+
         // Process ALL available frames to prevent stalling
         while (self.read_pos > 0 and self.active) {
             // Check if we have enough data for at least a frame header (9 bytes)
@@ -592,64 +598,61 @@ const Connection = struct {
                 std.log.debug("Insufficient data for frame header: {} bytes, waiting for more", .{self.read_pos});
                 break;
             }
-            
+
             // Parse frame header to determine required frame size
-            const frame_length = (@as(u32, self.read_buffer[0]) << 16) | 
-                               (@as(u32, self.read_buffer[1]) << 8) | 
-                               @as(u32, self.read_buffer[2]);
+            const frame_length = (@as(u32, self.read_buffer[0]) << 16) |
+                (@as(u32, self.read_buffer[1]) << 8) |
+                @as(u32, self.read_buffer[2]);
             const frame_type = self.read_buffer[3];
             const total_frame_size = 9 + frame_length; // header + payload
-            
-            std.log.debug("Frame detected: type={}, length={}, total_size={}, buffer_has={}", 
-                         .{ frame_type, frame_length, total_frame_size, self.read_pos });
-            
+
+            std.log.debug("Frame detected: type={}, length={}, total_size={}, buffer_has={}", .{ frame_type, frame_length, total_frame_size, self.read_pos });
+
             // Validate frame length (HTTP/2 spec: max 16MB)
             if (frame_length > 16 * 1024 * 1024) {
                 std.log.err("Frame length {} exceeds maximum allowed size", .{frame_length});
                 self.active = false;
                 return error.FrameTooLarge;
             }
-            
+
             // Check if we have the complete frame
             if (self.read_pos < total_frame_size) {
-                std.log.debug("Incomplete frame: have {} bytes, need {} bytes, waiting for more", 
-                            .{ self.read_pos, total_frame_size });
+                std.log.debug("Incomplete frame: have {} bytes, need {} bytes, waiting for more", .{ self.read_pos, total_frame_size });
                 break;
             }
-            
-            std.log.debug("Processing complete HTTP/2 frame: length={}, total_size={}", 
-                        .{ frame_length, total_frame_size });
-            
+
+            std.log.debug("Processing complete HTTP/2 frame: length={}, total_size={}", .{ frame_length, total_frame_size });
+
             // Extract frame data and process it
             const frame_data = self.read_buffer[0..total_frame_size];
             try self.handleFrame(frame_data);
-            
+
             // Remove processed frame from buffer
             const remaining = self.read_pos - total_frame_size;
             if (remaining > 0) {
                 std.mem.copyForwards(u8, self.read_buffer[0..remaining], self.read_buffer[total_frame_size..self.read_pos]);
             }
             self.read_pos = @intCast(remaining);
-            
+
             std.log.debug("Frame processed successfully, read_pos now: {}", .{self.read_pos});
         }
-        
+
         // Ensure any response data gets sent to the client
         if (self.write_pos > 0) {
             std.log.debug("Starting write of {} bytes for HTTP/2 response", .{self.write_pos});
             self.startWriting();
         }
     }
-    
+
     /// Handle a single HTTP/2 frame - fast, non-blocking operation
     fn handleFrame(self: *Self, frame_data: []u8) !void {
         // Parse frame header
         const frame_type = frame_data[3];
         const flags = frame_data[4];
         const stream_id = std.mem.readInt(u32, frame_data[5..9], .big) & 0x7FFFFFFF;
-        
+
         std.log.debug("Handling frame: type={}, stream_id={}, flags={}", .{ frame_type, stream_id, flags });
-        
+
         switch (frame_type) {
             0x1 => try self.handleHeadersFrame(frame_data), // HEADERS
             0x4 => try self.handleSettingsFrame(frame_data), // SETTINGS
@@ -659,38 +662,37 @@ const Connection = struct {
             },
         }
     }
-    
+
     fn handleHeadersFrame(self: *Self, frame_data: []u8) !void {
         const frame_length = (@as(u32, frame_data[0]) << 16) |
-                           (@as(u32, frame_data[1]) << 8) |
-                           @as(u32, frame_data[2]);
+            (@as(u32, frame_data[1]) << 8) |
+            @as(u32, frame_data[2]);
         const flags = frame_data[4];
         const stream_id = std.mem.readInt(u32, frame_data[5..9], .big) & 0x7FFFFFFF;
         const end_stream = (flags & 0x1) != 0;
         const end_headers = (flags & 0x4) != 0;
-        
-        std.log.debug("Handling HEADERS frame (stream_id={}, length={}, end_stream={}, end_headers={})", 
-                     .{ stream_id, frame_length, end_stream, end_headers });
-        
+
+        std.log.debug("Handling HEADERS frame (stream_id={}, length={}, end_stream={}, end_headers={})", .{ stream_id, frame_length, end_stream, end_headers });
+
         // Debug: Show raw header payload for analysis
         if (frame_length > 0 and frame_data.len >= 9 + frame_length) {
-            const header_payload = frame_data[9..9 + frame_length];
+            const header_payload = frame_data[9 .. 9 + frame_length];
             std.log.debug("HEADERS payload ({} bytes): {any}", .{ header_payload.len, header_payload });
         }
-        
+
         // Track stream state - this is proper HTTP/2 stream management
         if (end_stream) {
             try self.active_streams.put(stream_id, .half_closed_remote);
         } else {
             try self.active_streams.put(stream_id, .open);
         }
-        
+
         // Process request and send response (keep connection alive for more requests)
         if (end_headers) {
             std.log.debug("Sending response for stream {}", .{stream_id});
             // Extract headers and route through proper handler system
             if (frame_length > 0 and frame_data.len >= 9 + frame_length) {
-                const header_payload = frame_data[9..9 + frame_length];
+                const header_payload = frame_data[9 .. 9 + frame_length];
                 try self.processHttpRequest(stream_id, header_payload, end_stream);
             } else {
                 // Fallback to simple response if no headers
@@ -700,32 +702,32 @@ const Connection = struct {
             std.log.debug("Waiting for more HEADERS frames for stream {}", .{stream_id});
         }
     }
-    
+
     /// Process HTTP request by decoding HPACK headers using zero-allocation approach
     fn processHttpRequest(self: *Self, stream_id: u32, header_payload: []const u8, end_stream: bool) !void {
         var method: []const u8 = "GET";
         var path: []const u8 = "/";
-        
+
         // Parse HPACK headers manually to avoid dynamic allocation
         // This handles the most common cases without full HPACK dynamic table support
         var cursor: usize = 0;
         while (cursor < header_payload.len) {
             if (cursor >= header_payload.len) break;
-            
+
             const first_byte = header_payload[cursor];
-            
+
             // Handle indexed header field (first bit = 1)
             if ((first_byte & 0x80) != 0) {
                 const index = first_byte & 0x7F;
                 cursor += 1;
-                
+
                 // Common HPACK static table entries
                 switch (index) {
                     2 => { // :method GET
                         method = "GET";
                         std.log.debug("Extracted method: GET (indexed)", .{});
                     },
-                    3 => { // :method POST  
+                    3 => { // :method POST
                         method = "POST";
                         std.log.debug("Extracted method: POST (indexed)", .{});
                     },
@@ -741,7 +743,7 @@ const Connection = struct {
             // Handle literal header field (first bit = 0, second bit = 1)
             else if ((first_byte & 0x40) != 0) {
                 cursor += 1; // Skip the first byte for now
-                
+
                 // For literal headers, we'd need to decode the length-prefixed strings
                 // For now, just skip them to avoid complexity
                 if (cursor < header_payload.len) {
@@ -752,31 +754,30 @@ const Connection = struct {
                         cursor += 1 + value_len; // Skip value length + value data
                     }
                 }
-            }
-            else {
+            } else {
                 // Skip other header types for now
                 cursor += 1;
             }
         }
-        
+
         std.log.debug("Final extracted - method: {s}, path: {s}", .{ method, path });
-        
+
         // Route request through handler system
         try self.routeAndHandleRequest(stream_id, method, path, end_stream);
     }
-    
+
     /// Route request through the handler system using zero-allocation approach
     fn routeAndHandleRequest(self: *Self, stream_id: u32, method: []const u8, path: []const u8, end_stream: bool) !void {
         std.log.debug("Routing request: {s} {s}", .{ method, path });
-        
+
         // For zero-allocation HTTP/2, directly handle common routes without full handler system
         // This avoids the complex Context creation that may involve allocations
-        
+
         if (std.mem.eql(u8, method, "GET") and std.mem.eql(u8, path, "/")) {
             std.log.debug("Handling GET / with static response", .{});
-            
+
             // Send HTML response directly
-            const html_body = 
+            const html_body =
                 \\ <!DOCTYPE html>
                 \\ <html>
                 \\ <head>
@@ -788,36 +789,34 @@ const Connection = struct {
                 \\ </body>
                 \\ </html>
             ;
-            
+
             try self.sendStaticResponse(stream_id, 200, "text/html", html_body, end_stream);
-            
         } else if (std.mem.eql(u8, method, "GET") and std.mem.eql(u8, path, "/api/hello")) {
             std.log.debug("Handling GET /api/hello with static JSON", .{});
-            
-            const json_body = 
+
+            const json_body =
                 \\{
                 \\  "message": "Hello from HTTP/2 API!",
                 \\  "method": "GET",
                 \\  "path": "/api/hello"
                 \\}
             ;
-            
+
             try self.sendStaticResponse(stream_id, 200, "application/json", json_body, end_stream);
-            
         } else {
             std.log.warn("No static route found for {s} {s}", .{ method, path });
             try self.sendErrorResponse(stream_id, 404, "Not Found", end_stream);
         }
     }
-    
+
     /// Send static response without allocations
     fn sendStaticResponse(self: *Self, stream_id: u32, status_code: u16, content_type: []const u8, body: []const u8, request_end_stream: bool) !void {
         std.log.debug("Sending static response for stream {} (status={}, body_len={})", .{ stream_id, status_code, body.len });
-        
+
         // Create HEADERS frame with status and content-type
         var headers_payload: [256]u8 = undefined;
         var headers_len: usize = 0;
-        
+
         // Add :status header (HPACK encoded)
         if (status_code == 200) {
             headers_payload[headers_len] = 0x88; // :status: 200 (indexed)
@@ -827,11 +826,11 @@ const Connection = struct {
             headers_payload[headers_len] = 0x88; // Default to 200 for now
             headers_len += 1;
         }
-        
+
         // Simplified: Just send :status 200 for now to test basic functionality
         // Skip content-type header to test if that's causing the issue
         _ = content_type; // Suppress unused parameter warning
-        
+
         // Create HEADERS frame
         var headers_frame: [9 + 256]u8 = undefined;
         headers_frame[0] = @intCast((headers_len >> 16) & 0xFF);
@@ -840,26 +839,26 @@ const Connection = struct {
         headers_frame[3] = 0x1; // HEADERS type
         headers_frame[4] = 0x4; // END_HEADERS flag
         std.mem.writeInt(u32, headers_frame[5..9], stream_id, .big);
-        @memcpy(headers_frame[9..9 + headers_len], headers_payload[0..headers_len]);
-        
+        @memcpy(headers_frame[9 .. 9 + headers_len], headers_payload[0..headers_len]);
+
         // Create DATA frame with response body
         var data_frame: [9 + 8192]u8 = undefined; // Support up to 8KB response
         const body_len: u32 = @intCast(@min(body.len, 8192 - 9));
-        
+
         data_frame[0] = @intCast((body_len >> 16) & 0xFF);
         data_frame[1] = @intCast((body_len >> 8) & 0xFF);
         data_frame[2] = @intCast(body_len & 0xFF);
         data_frame[3] = 0x0; // DATA type
         data_frame[4] = if (request_end_stream) 0x1 else 0x0; // END_STREAM flag
         std.mem.writeInt(u32, data_frame[5..9], stream_id, .big);
-        @memcpy(data_frame[9..9 + body_len], body[0..body_len]);
-        
+        @memcpy(data_frame[9 .. 9 + body_len], body[0..body_len]);
+
         // Send frames
-        std.log.debug("Sending HEADERS frame: {any}", .{headers_frame[0..9 + headers_len]});
+        std.log.debug("Sending HEADERS frame: {any}", .{headers_frame[0 .. 9 + headers_len]});
         std.log.debug("Sending DATA frame with {} bytes body", .{body_len});
-        try self.writeData(headers_frame[0..9 + headers_len]);
-        try self.writeData(data_frame[0..9 + body_len]);
-        
+        try self.writeData(headers_frame[0 .. 9 + headers_len]);
+        try self.writeData(data_frame[0 .. 9 + body_len]);
+
         // Update stream state
         if (request_end_stream) {
             try self.active_streams.put(stream_id, .closed);
@@ -868,19 +867,19 @@ const Connection = struct {
             try self.active_streams.put(stream_id, .half_closed_local);
             std.log.debug("Stream {} half-closed (local)", .{stream_id});
         }
-        
+
         // Update stats
         _ = self.server.stats.requests_processed.fetchAdd(1, .monotonic);
     }
-    
+
     /// Send response from handler system
     fn sendHandlerResponse(self: *Self, stream_id: u32, response: handler.Response, request_end_stream: bool) !void {
         std.log.debug("Sending handler response for stream {} (status={}, body_len={})", .{ stream_id, @intFromEnum(response.status), response.body.len });
-        
+
         // Create HEADERS frame with status and content-type
         var headers_payload: [256]u8 = undefined;
         var headers_len: usize = 0;
-        
+
         // Add :status header (HPACK encoded)
         const status_code = @intFromEnum(response.status);
         if (status_code == 200) {
@@ -891,7 +890,7 @@ const Connection = struct {
             headers_payload[headers_len] = 0x88; // Default to 200 for now
             headers_len += 1;
         }
-        
+
         // Add content-type header - default to text/html for now
         const content_type = "text/html";
         // Simple literal header field encoding for content-type
@@ -899,9 +898,9 @@ const Connection = struct {
         headers_len += 1;
         headers_payload[headers_len] = @intCast(content_type.len);
         headers_len += 1;
-        @memcpy(headers_payload[headers_len..headers_len + content_type.len], content_type);
+        @memcpy(headers_payload[headers_len .. headers_len + content_type.len], content_type);
         headers_len += content_type.len;
-        
+
         // Create HEADERS frame
         var headers_frame: [9 + 256]u8 = undefined;
         headers_frame[0] = @intCast((headers_len >> 16) & 0xFF);
@@ -910,27 +909,27 @@ const Connection = struct {
         headers_frame[3] = 0x1; // HEADERS type
         headers_frame[4] = 0x4; // END_HEADERS flag
         std.mem.writeInt(u32, headers_frame[5..9], stream_id, .big);
-        @memcpy(headers_frame[9..9 + headers_len], headers_payload[0..headers_len]);
-        
+        @memcpy(headers_frame[9 .. 9 + headers_len], headers_payload[0..headers_len]);
+
         // Create DATA frame with response body
         const body = response.body;
         var data_frame: [9 + 8192]u8 = undefined; // Support up to 8KB response
         const body_len: u32 = @intCast(@min(body.len, 8192 - 9));
-        
+
         data_frame[0] = @intCast((body_len >> 16) & 0xFF);
         data_frame[1] = @intCast((body_len >> 8) & 0xFF);
         data_frame[2] = @intCast(body_len & 0xFF);
         data_frame[3] = 0x0; // DATA type
         data_frame[4] = if (request_end_stream) 0x1 else 0x0; // END_STREAM flag
         std.mem.writeInt(u32, data_frame[5..9], stream_id, .big);
-        @memcpy(data_frame[9..9 + body_len], body[0..body_len]);
-        
+        @memcpy(data_frame[9 .. 9 + body_len], body[0..body_len]);
+
         // Send frames
-        std.log.debug("Sending HEADERS frame: {any}", .{headers_frame[0..9 + headers_len]});
+        std.log.debug("Sending HEADERS frame: {any}", .{headers_frame[0 .. 9 + headers_len]});
         std.log.debug("Sending DATA frame with {} bytes body", .{body_len});
-        try self.writeData(headers_frame[0..9 + headers_len]);
-        try self.writeData(data_frame[0..9 + body_len]);
-        
+        try self.writeData(headers_frame[0 .. 9 + headers_len]);
+        try self.writeData(data_frame[0 .. 9 + body_len]);
+
         // Update stream state
         if (request_end_stream) {
             try self.active_streams.put(stream_id, .closed);
@@ -939,23 +938,25 @@ const Connection = struct {
             try self.active_streams.put(stream_id, .half_closed_local);
             std.log.debug("Stream {} half-closed (local)", .{stream_id});
         }
-        
+
         // Update stats
         _ = self.server.stats.requests_processed.fetchAdd(1, .monotonic);
     }
-    
+
     /// Send error response
     fn sendErrorResponse(self: *Self, stream_id: u32, status_code: u16, message: []const u8, request_end_stream: bool) !void {
         // Simple error response with hardcoded HPACK
         const headers_payload = "\x8c"; // :status: 500 (would need proper encoding for different codes)
-        
+
         var headers_frame: [9 + 1]u8 = undefined;
-        headers_frame[0] = 0; headers_frame[1] = 0; headers_frame[2] = 1; // length = 1
+        headers_frame[0] = 0;
+        headers_frame[1] = 0;
+        headers_frame[2] = 1; // length = 1
         headers_frame[3] = 0x1; // HEADERS type
         headers_frame[4] = 0x4; // END_HEADERS flag
         std.mem.writeInt(u32, headers_frame[5..9], stream_id, .big);
         headers_frame[9] = headers_payload[0];
-        
+
         var data_frame: [9 + 256]u8 = undefined;
         const msg_len: u32 = @intCast(@min(message.len, 256));
         data_frame[0] = @intCast((msg_len >> 16) & 0xFF);
@@ -964,48 +965,48 @@ const Connection = struct {
         data_frame[3] = 0x0; // DATA type
         data_frame[4] = if (request_end_stream) 0x1 else 0x0; // END_STREAM flag
         std.mem.writeInt(u32, data_frame[5..9], stream_id, .big);
-        @memcpy(data_frame[9..9 + msg_len], message[0..msg_len]);
-        
+        @memcpy(data_frame[9 .. 9 + msg_len], message[0..msg_len]);
+
         try self.writeData(&headers_frame);
-        try self.writeData(data_frame[0..9 + msg_len]);
-        
+        try self.writeData(data_frame[0 .. 9 + msg_len]);
+
         _ = status_code; // Suppress unused warning for now
     }
-    
+
     fn handleSettingsFrame(self: *Self, frame_data: []u8) !void {
         const frame_length = (@as(u32, frame_data[0]) << 16) |
-                           (@as(u32, frame_data[1]) << 8) |
-                           @as(u32, frame_data[2]);
+            (@as(u32, frame_data[1]) << 8) |
+            @as(u32, frame_data[2]);
         const flags = frame_data[4];
         const is_ack = (flags & 0x1) != 0;
-        
+
         std.log.debug("Handling SETTINGS frame (length={}, ack={})", .{ frame_length, is_ack });
-        
+
         if (is_ack) {
             // Settings ACK - no action needed
             return;
         }
-        
+
         // Parse SETTINGS frame and send ACK
         const settings_ack = "\x00\x00\x00\x04\x01\x00\x00\x00\x00"; // Empty SETTINGS with ACK flag
         try self.writeData(settings_ack);
     }
-    
+
     fn handleWindowUpdateFrame(self: *Self, frame_data: []u8) !void {
         _ = self;
         _ = frame_data;
         std.log.debug("Handling WINDOW_UPDATE frame", .{});
     }
-    
+
     /// Send HTTP/2 response with proper stream lifecycle management
     fn sendStreamResponse(self: *Self, stream_id: u32, request_end_stream: bool) !void {
         std.log.debug("Sending stream response for stream {} (request_end_stream={})", .{ stream_id, request_end_stream });
-        
+
         // Create proper HTTP/2 HEADERS frame with :status: 200
         // Simple HPACK: 0x88 = :status: 200 (indexed from static table entry 8)
         const headers_payload = "\x88"; // Just :status: 200
         const headers_length = headers_payload.len;
-        
+
         var headers_frame: [9 + headers_payload.len]u8 = undefined;
         // Length (24 bits)
         headers_frame[0] = @intCast((headers_length >> 16) & 0xFF);
@@ -1019,11 +1020,11 @@ const Connection = struct {
         std.mem.writeInt(u32, headers_frame[5..9], stream_id, .big);
         // Payload
         @memcpy(headers_frame[9..], headers_payload);
-        
+
         // Create DATA frame with "Hello, World!"
         const data_payload = "Hello, World!";
         const data_length = data_payload.len;
-        
+
         var data_frame: [9 + data_payload.len]u8 = undefined;
         // Length
         data_frame[0] = @intCast((data_length >> 16) & 0xFF);
@@ -1037,13 +1038,13 @@ const Connection = struct {
         std.mem.writeInt(u32, data_frame[5..9], stream_id, .big);
         // Payload
         @memcpy(data_frame[9..], data_payload);
-        
+
         // Send frames
         std.log.debug("Sending HEADERS frame: {any}", .{headers_frame});
         std.log.debug("Sending DATA frame: {any}", .{data_frame});
         try self.writeData(&headers_frame);
         try self.writeData(&data_frame);
-        
+
         // Update stream state properly
         if (request_end_stream) {
             // If request ended the stream, close it after our response
@@ -1054,16 +1055,16 @@ const Connection = struct {
             try self.active_streams.put(stream_id, .half_closed_local);
             std.log.debug("Stream {} half-closed (local), ready for more data", .{stream_id});
         }
-        
+
         // Update stats
         _ = self.server.stats.requests_processed.fetchAdd(1, .monotonic);
     }
-    
+
     /// Process HTTP/1.1 request
     fn processHttp11(self: *Self) !void {
         // Parse HTTP/1.1 request from buffer
         const request_data = self.read_buffer[0..self.read_pos];
-        
+
         // Look for end of HTTP headers (double CRLF)
         const header_end = std.mem.indexOf(u8, request_data, "\r\n\r\n") orelse {
             // Incomplete request, wait for more data
@@ -1074,7 +1075,7 @@ const Connection = struct {
             }
             return; // Wait for more data
         };
-        
+
         // Parse request line
         const header_section = request_data[0..header_end];
         var lines = std.mem.splitSequence(u8, header_section, "\r\n");
@@ -1082,7 +1083,7 @@ const Connection = struct {
             try self.sendHttp11Error(400, "Bad Request");
             return;
         };
-        
+
         // Parse method and path
         var parts = std.mem.splitSequence(u8, request_line, " ");
         const method_str = parts.next() orelse {
@@ -1093,7 +1094,7 @@ const Connection = struct {
             try self.sendHttp11Error(400, "Bad Request");
             return;
         };
-        
+
         // Convert method string to enum
         const method = if (std.mem.eql(u8, method_str, "GET"))
             handler.Method.get
@@ -1107,9 +1108,9 @@ const Connection = struct {
             try self.sendHttp11Error(405, "Method Not Allowed");
             return;
         };
-        
+
         std.log.info("HTTP/1.1 {} {s}", .{ method, path });
-        
+
         // Find handler
         const handler_fn = self.server.router.findHandler(method, path);
         if (handler_fn) |handler_func| {
@@ -1121,20 +1122,20 @@ const Connection = struct {
                 "", // No query parsing for now
                 "", // No body for now
             );
-            
+
             // Call handler
             var response = handler_func(&context) catch {
                 try self.sendHttp11Error(500, "Internal Server Error");
                 return;
             };
             defer response.deinit();
-            
+
             // Send HTTP/1.1 response
             try self.sendHttp11Response(&response);
         } else {
             try self.sendHttp11Error(404, "Not Found");
         }
-        
+
         // Clear processed data from buffer
         const total_request_size = header_end + 4; // Include the \r\n\r\n
         if (total_request_size < self.read_pos) {
@@ -1146,13 +1147,13 @@ const Connection = struct {
             self.read_pos = 0;
         }
     }
-    
+
     /// Send HTTP/1.1 response
     fn sendHttp11Response(self: *Self, response: *const handler.Response) !void {
         var response_buffer: [8192]u8 = undefined;
         var fbs = std.io.fixedBufferStream(&response_buffer);
         const writer = fbs.writer();
-        
+
         // Status line
         const status_text = switch (response.status) {
             .ok => "200 OK",
@@ -1160,14 +1161,14 @@ const Connection = struct {
             .internal_server_error => "500 Internal Server Error",
             else => "200 OK",
         };
-        
+
         try writer.print("HTTP/1.1 {s}\r\n", .{status_text});
-        
+
         // Headers
         for (response.headers.items) |header| {
             try writer.print("{s}: {s}\r\n", .{ header.name, header.value });
         }
-        
+
         // Content-Length if not already present
         var has_content_length = false;
         for (response.headers.items) |header| {
@@ -1176,62 +1177,60 @@ const Connection = struct {
                 break;
             }
         }
-        
+
         if (!has_content_length) {
             try writer.print("Content-Length: {}\r\n", .{response.body.len});
         }
-        
+
         // Connection close for simplicity
         try writer.print("Connection: close\r\n", .{});
-        
+
         // End of headers
         try writer.print("\r\n", .{});
-        
+
         // Body
         try writer.writeAll(response.body);
-        
+
         // Write to connection
         const response_data = fbs.getWritten();
         if (self.write_pos + response_data.len > self.write_buffer.len) {
             return error.WriteBufferFull;
         }
-        
-        @memcpy(self.write_buffer[self.write_pos..self.write_pos + response_data.len], response_data);
+
+        @memcpy(self.write_buffer[self.write_pos .. self.write_pos + response_data.len], response_data);
         self.write_pos += @intCast(response_data.len);
-        
+
         // Trigger write
         self.startWriting();
-        
+
         // Close connection after response (HTTP/1.1 without keep-alive)
         self.active = false;
     }
-    
+
     /// Send HTTP/1.1 error response
     fn sendHttp11Error(self: *Self, status_code: u16, status_text: []const u8) !void {
         var response_buffer: [1024]u8 = undefined;
         var fbs = std.io.fixedBufferStream(&response_buffer);
         const writer = fbs.writer();
-        
-        const body = try std.fmt.allocPrint(self.server.allocator, 
-            "<html><body><h1>{} {s}</h1></body></html>", 
-            .{ status_code, status_text });
+
+        const body = try std.fmt.allocPrint(self.server.allocator, "<html><body><h1>{} {s}</h1></body></html>", .{ status_code, status_text });
         defer self.server.allocator.free(body);
-        
+
         try writer.print("HTTP/1.1 {} {s}\r\n", .{ status_code, status_text });
         try writer.print("Content-Type: text/html\r\n", .{});
         try writer.print("Content-Length: {}\r\n", .{body.len});
         try writer.print("Connection: close\r\n", .{});
         try writer.print("\r\n", .{});
         try writer.writeAll(body);
-        
+
         const response_data = fbs.getWritten();
         if (self.write_pos + response_data.len > self.write_buffer.len) {
             return error.WriteBufferFull;
         }
-        
-        @memcpy(self.write_buffer[self.write_pos..self.write_pos + response_data.len], response_data);
+
+        @memcpy(self.write_buffer[self.write_pos .. self.write_pos + response_data.len], response_data);
         self.write_pos += @intCast(response_data.len);
-        
+
         self.startWriting();
         self.active = false;
     }
@@ -1301,7 +1300,7 @@ const Connection = struct {
             std.log.debug("Write already in progress - queuing data (write_pos: {})", .{self.write_pos});
             return; // Write already in progress
         }
-        
+
         std.log.debug("Starting new write operation - {} bytes", .{self.write_pos});
 
         // Use ping-pong completion pattern with bounds checking
@@ -1357,29 +1356,29 @@ const Connection = struct {
             std.debug.assert(self.write_pos <= self.write_buffer.len);
         }
     }
-    
+
     /// Queue TLS write data to prevent concurrent write corruption
     fn queueTLSWrite(self: *Self, data: []const u8) !void {
         // Clone the data to ensure it's not modified while queued
         const data_copy = try self.server.allocator.dupe(u8, data);
-        
+
         var should_process = false;
         {
             self.tls_queue_mutex.lock();
             defer self.tls_queue_mutex.unlock();
-            
+
             try self.tls_write_queue.append(data_copy);
-            
+
             // Check if we should start processing (no lock held when processing)
             should_process = !self.tls_write_pending.swap(true, .acquire);
         }
-        
+
         // Process the queue outside of the mutex to avoid deadlock
         if (should_process) {
             self.processTLSWriteQueue();
         }
     }
-    
+
     /// Process all queued TLS writes serially
     fn processTLSWriteQueue(self: *Self) void {
         if (self.tls_conn == null or !self.active) {
@@ -1387,17 +1386,17 @@ const Connection = struct {
             self.tls_write_retry_count.store(0, .release);
             return;
         }
-        
+
         const tls_connection = self.tls_conn.?;
-        
+
         self.tls_queue_mutex.lock();
         defer self.tls_queue_mutex.unlock();
-        
+
         // Process all queued writes
         while (self.tls_write_queue.items.len > 0) {
             const data = self.tls_write_queue.items[0];
             defer self.server.allocator.free(data);
-            
+
             // Write to TLS layer
             const writer = tls_connection.writer();
             writer.writeAll(data) catch |err| {
@@ -1412,7 +1411,7 @@ const Connection = struct {
                             self.tls_write_retry_count.store(0, .release);
                             continue;
                         }
-                        
+
                         // TLS would block - schedule retry with backoff
                         std.log.debug("TLS write queue blocked (retry {}), will retry after write completion", .{retry_count + 1});
                         // Don't call scheduleTLSOperation here - let write callback handle it
@@ -1427,18 +1426,18 @@ const Connection = struct {
                     },
                 }
             };
-            
+
             // Successfully written, remove from queue and reset retry count
             _ = self.tls_write_queue.orderedRemove(0);
             self.tls_write_retry_count.store(0, .release);
         }
-        
+
         // All writes processed, drain encrypted data
         self.drainTLSEncryptedDataAsync(tls_connection);
-        
+
         // Clear the processing flag
         self.tls_write_pending.store(false, .release);
-        
+
         // Check if we should close after all writes complete
         if (self.close_after_write and self.tls_write_queue.items.len == 0 and self.write_pos == 0) {
             std.log.debug("Closing connection after TLS write queue drained", .{});
@@ -1503,9 +1502,9 @@ const Connection = struct {
                 self.active = false;
                 self.server.closeConnection(self);
                 return .disarm;
-            }
+            },
         };
-        
+
         // Process through simplified HTTP/2 protocol handling
         self.processHttp2() catch |err| {
             std.log.err("HTTP/2 protocol error: {}", .{err});
@@ -1591,10 +1590,10 @@ const Connection = struct {
 
     fn completeTLSHandshake(self: *Connection, tls_connection: *tls.TlsServerConnection) void {
         self.tls_handshake_complete = true;
-        
+
         if (tls_connection.getNegotiatedProtocol()) |protocol| {
             self.negotiated_protocol = protocol;
-            
+
             if (std.mem.eql(u8, protocol, "http/1.1")) {
                 std.log.debug("HTTP/1.1 negotiated via ALPN", .{});
             } else if (std.mem.eql(u8, protocol, "h2")) {
@@ -1606,11 +1605,11 @@ const Connection = struct {
             std.log.debug("No ALPN protocol negotiated, defaulting to HTTP/1.1", .{});
             self.negotiated_protocol = "http/1.1";
         }
-        
+
         if (tls_connection.hasEncryptedDataToSend()) {
             self.drainTLSEncryptedData(tls_connection);
         }
-        
+
         // Critical: Start reading to receive HTTP/2 frames after handshake completion
         std.log.debug("TLS handshake complete, starting to read HTTP/2 data", .{});
         self.startReading();
@@ -1672,7 +1671,7 @@ const Connection = struct {
 
                 if (available_space > 0) {
                     const tls_read_result = reader.read(self.read_buffer[self.read_pos .. self.read_pos + available_space]);
-                    
+
                     if (tls_read_result) |bytes_read| {
                         // Successfully read some bytes
                         if (bytes_read > 0) {
@@ -1702,14 +1701,14 @@ const Connection = struct {
                             },
                             error.ConnectionClosed => {
                                 std.log.debug("TLS connection closed by client", .{});
-                                
+
                                 // Don't close immediately if writes are still pending
                                 if (self.write_active.load(.acquire)) {
                                     std.log.debug("Deferring connection close - write still active", .{});
                                     self.active = false; // Mark as inactive but don't close yet
                                     return .disarm;
                                 }
-                                
+
                                 self.server.closeConnection(self);
                                 return .disarm;
                             },
@@ -1721,11 +1720,11 @@ const Connection = struct {
                         }
                     }
                 }
-                
+
                 // Process any available data in the read buffer (either newly read or previously buffered)
                 if (self.read_pos > 0) {
                     std.log.debug("Processing {} bytes of available data", .{self.read_pos});
-                    
+
                     // Handle based on negotiated protocol
                     if (self.negotiated_protocol) |protocol| {
                         if (std.mem.eql(u8, protocol, "h2")) {
@@ -1736,16 +1735,16 @@ const Connection = struct {
                                     std.log.err("Failed to initialize HTTP/2 connection: {}", .{err});
                                     self.server.closeConnection(self);
                                     return .disarm;
-                                }
+                                },
                             };
-                            
+
                             // Process through simplified HTTP/2 protocol handling
                             self.processHttp2() catch |err| {
                                 std.log.err("HTTP/2 protocol error: {}", .{err});
                                 self.server.closeConnection(self);
                                 return .disarm;
                             };
-                            
+
                             // Connection state is now managed directly in the connection object
                         } else {
                             // Handle HTTP/1.1 request
@@ -1768,7 +1767,7 @@ const Connection = struct {
                     if (tls_connection.hasEncryptedDataToSend()) {
                         self.drainTLSEncryptedData(tls_connection);
                     }
-                    
+
                     std.log.debug("Processed available data, read_pos now: {}, active: {}", .{ self.read_pos, self.active });
                 }
             }
@@ -1789,18 +1788,17 @@ const Connection = struct {
     /// Schedule async close to avoid blocking other connections
     fn scheduleAsyncClose(self: *Self) void {
         // Check if we have pending writes or TLS queue items
-        const has_pending_writes = self.write_pos > 0 or 
-                                  self.write_active.load(.acquire) or
-                                  self.tls_write_queue.items.len > 0;
-        
+        const has_pending_writes = self.write_pos > 0 or
+            self.write_active.load(.acquire) or
+            self.tls_write_queue.items.len > 0;
+
         if (has_pending_writes) {
-            std.log.debug("Deferring close until writes complete (write_pos: {}, write_active: {}, tls_queue: {})", 
-                         .{ self.write_pos, self.write_active.load(.acquire), self.tls_write_queue.items.len });
+            std.log.debug("Deferring close until writes complete (write_pos: {}, write_active: {}, tls_queue: {})", .{ self.write_pos, self.write_active.load(.acquire), self.tls_write_queue.items.len });
             // Mark for close after writes complete
             self.close_after_write = true;
             return;
         }
-        
+
         // No pending writes, close immediately
         std.log.debug("No pending writes, closing connection immediately", .{});
         self.server.closeConnection(self);
@@ -1847,7 +1845,7 @@ const Connection = struct {
         var total_drained: usize = 0;
         var chunks_processed: u32 = 0;
         const max_chunks = 4; // Limit processing to prevent blocking
-        
+
         while (tls_connection.hasEncryptedDataToSend() and chunks_processed < max_chunks) {
             const encrypted_bytes = tls_connection.readEncryptedData(&temp_buffer) catch |err| {
                 std.log.err("Failed to read encrypted data: {}", .{err});
@@ -1874,20 +1872,20 @@ const Connection = struct {
         if (self.write_pos > 0 and !self.write_active.load(.acquire)) {
             self.startWriting();
         }
-        
+
         // If there's still more encrypted data, schedule continuation
         if (tls_connection.hasEncryptedDataToSend()) {
             self.scheduleTLSOperation();
         }
     }
-    
+
     /// Schedule TLS operation completion for next event loop iteration
     fn scheduleTLSOperation(self: *Connection) void {
         // Prevent multiple scheduled operations
         if (self.tls_operation_scheduled.swap(true, .acquire)) {
             return; // Already scheduled
         }
-        
+
         // Only process TLS writes if not already at retry limit
         if (self.tls_write_pending.load(.acquire)) {
             const retry_count = self.tls_write_retry_count.load(.acquire);
@@ -1898,12 +1896,12 @@ const Connection = struct {
                 std.log.debug("Skipping TLS write queue processing - retry limit reached", .{});
             }
         }
-        
+
         // Continue reading to process more data
         if (self.active and !self.read_active.load(.acquire)) {
             self.startReading();
         }
-        
+
         // Clear the scheduled flag
         self.tls_operation_scheduled.store(false, .release);
     }
@@ -1950,7 +1948,7 @@ const Connection = struct {
         } else {
             // All data written, clear the buffer
             self.write_pos = 0;
-            
+
             // Check if we should close after write completes
             if (self.close_after_write) {
                 std.log.debug("Closing connection after write completed", .{});
@@ -1985,7 +1983,9 @@ const Connection = struct {
 const ConnectionPool = struct {
     pool: []Connection,
     buffers: []u8,
-    free_list: std.ArrayList(u32),
+    // TODO: https://ziglang.org/download/0.15.1/release-notes.html#ArrayList-make-unmanaged-the-default
+    // Warning: these will both eventually be removed entirely (in reference to `Managed`).
+    free_list: std.array_list.Managed(u32),
     allocator: std.mem.Allocator,
     buffer_size: u32,
 
@@ -2030,12 +2030,16 @@ const ConnectionPool = struct {
                 .tls_write_pending = std.atomic.Value(bool).init(false),
                 .tls_operation_scheduled = std.atomic.Value(bool).init(false),
                 .tls_write_retry_count = std.atomic.Value(u32).init(0),
-                .tls_write_queue = std.ArrayList([]u8).init(allocator),
+                // TODO: https://ziglang.org/download/0.15.1/release-notes.html#ArrayList-make-unmanaged-the-default
+                // Warning: these will both eventually be removed entirely (in reference to `Managed`).
+                .tls_write_queue = std.array_list.Managed([]u8).init(allocator),
                 .tls_queue_mutex = std.Thread.Mutex{},
             };
         }
 
-        var free_list = std.ArrayList(u32).init(allocator);
+        // TODO: https://ziglang.org/download/0.15.1/release-notes.html#ArrayList-make-unmanaged-the-default
+        // Warning: these will both eventually be removed entirely (in reference to `Managed`).
+        var free_list = std.array_list.Managed(u32).init(allocator);
         try free_list.ensureTotalCapacity(max_connections);
         for (0..max_connections) |pool_index_usize| {
             const pool_index: u32 = @intCast(pool_index_usize);
@@ -2102,11 +2106,11 @@ const ConnectionPool = struct {
         released_connection.write_active.store(false, .release);
         released_connection.tls_write_pending.store(false, .release);
         released_connection.tls_operation_scheduled.store(false, .release);
-        
+
         // Clean up stream state - avoid HashMap operations to prevent alignment issues
         // Simply reset the stream ID counter; streams will be properly managed on next use
         released_connection.next_stream_id = 1;
-        
+
         // Clean up any remaining TLS write queue items - retain capacity for reuse
         released_connection.tls_queue_mutex.lock();
         for (released_connection.tls_write_queue.items) |queued_data| {

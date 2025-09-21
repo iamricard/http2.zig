@@ -25,7 +25,7 @@ pub const WorkerPool = struct {
     main_loop: xev.Loop,
     worker_threads: [memory_budget.MemBudget.worker_count]?std.Thread,
     // Work queue using libxev-compatible approach
-    work_queue: std.fifo.LinearFifo(WorkItem, .Dynamic),
+    work_queue: std.Deque(WorkItem), //std.fifo.LinearFifo(WorkItem, .Dynamic),
     queue_mutex: std.Thread.Mutex,
     work_available: std.atomic.Value(bool),
     // Pool state management
@@ -42,7 +42,7 @@ pub const WorkerPool = struct {
         const self = Self{
             .main_loop = try xev.Loop.init(.{}),
             .worker_threads = [_]?std.Thread{null} ** memory_budget.MemBudget.worker_count,
-            .work_queue = std.fifo.LinearFifo(WorkItem, .Dynamic).init(allocator),
+            .work_queue = try std.Deque(WorkItem).initCapacity(allocator, 0),
             .queue_mutex = std.Thread.Mutex{},
             .work_available = std.atomic.Value(bool).init(false),
             .running = std.atomic.Value(bool).init(false),
@@ -54,8 +54,8 @@ pub const WorkerPool = struct {
         };
         return self;
     }
-    pub fn deinit(self: *Self) void {
-        self.work_queue.deinit();
+    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+        self.work_queue.deinit(allocator);
         self.main_loop.deinit();
     }
     /// Start the worker pool with simplified libxev integration
@@ -403,7 +403,7 @@ const BackoffStrategy = struct {
             std.atomic.spinLoopHint();
         } else {
             // Longer delay: actual sleep
-            std.time.sleep(self.current_delay_ns);
+            std.Thread.sleep(self.current_delay_ns);
         }
         // Exponential backoff
         self.current_delay_ns = @min(self.current_delay_ns * 2, self.max_delay_ns);
@@ -426,7 +426,7 @@ test "Worker pool initialization and basic operations" {
     var memory_pool = try memory_budget.StaticMemoryPool.init(arena.allocator());
     defer memory_pool.deinit();
     var worker_pool = try WorkerPool.init(arena.allocator(), &memory_pool);
-    defer worker_pool.deinit();
+    defer worker_pool.deinit(arena.allocator());
     // Test initialization
     const initial_stats = worker_pool.getStats();
     try std.testing.expect(initial_stats.worker_count == memory_budget.MemBudget.worker_count);
@@ -441,7 +441,7 @@ test "libxev-enhanced worker distribution" {
     var memory_pool = try memory_budget.StaticMemoryPool.init(arena.allocator());
     defer memory_pool.deinit();
     var worker_pool = try WorkerPool.init(arena.allocator(), &memory_pool);
-    defer worker_pool.deinit();
+    defer worker_pool.deinit(arena.allocator());
     // Test libxev Loop initialization succeeded
     // For now, just verify the structure works without starting threads
     const stats = worker_pool.getStats();

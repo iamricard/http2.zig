@@ -1,7 +1,7 @@
 //! HTTP/2 Protocol Implementation Build Configuration
 //!
 //! - High-performance HTTP/2 library with libxev
-//! - Example server applications  
+//! - Example server applications
 //! - Comprehensive test suite
 //! - Documentation generation
 //! - Benchmarking tools
@@ -11,7 +11,7 @@ const std = @import("std");
 // Project metadata
 const project_name = "http2";
 const project_version = "0.1.0";
-const minimum_zig_version = "0.14.0";
+const minimum_zig_version = "0.16.0-dev.254+6dd0270a1";
 
 pub fn build(b: *std.Build) void {
     // Standard target and optimization options
@@ -28,11 +28,14 @@ pub fn build(b: *std.Build) void {
     });
 
     // Core HTTP/2 library
-    const http2_lib = b.addStaticLibrary(.{
+    const http2_lib = b.addLibrary(.{
+        .linkage = .static,
         .name = project_name,
-        .root_source_file = b.path("src/http2.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/http2.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
         .version = std.SemanticVersion.parse(project_version) catch unreachable,
     });
     http2_lib.linkLibC();
@@ -51,7 +54,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    
+
     // Add libxev to the http2 module
     http2_module.addImport("xev", libxev.module("xev"));
 
@@ -81,9 +84,11 @@ fn add_examples(
     // Basic TLS Example
     const basic_tls = b.addExecutable(.{
         .name = "basic_tls_server",
-        .root_source_file = b.path("examples/basic_tls.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/basic_tls.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     basic_tls.root_module.addImport("http2", http2_module);
     basic_tls.linkLibC();
@@ -111,9 +116,11 @@ fn add_benchmark(
     // Benchmark server
     const benchmark = b.addExecutable(.{
         .name = "benchmark",
-        .root_source_file = b.path("benchmarks/benchmark.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("benchmarks/benchmark.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     benchmark.root_module.addImport("http2", http2_module);
     benchmark.linkLibC();
@@ -141,7 +148,7 @@ fn add_tests(
     // Unit tests for core modules
     const test_modules = [_][]const u8{
         "src/frame.zig",
-        "src/stream.zig", 
+        "src/stream.zig",
         "src/budget_assertions.zig",
         "src/connection.zig",
         "src/hpack.zig",
@@ -156,11 +163,13 @@ fn add_tests(
 
     for (test_modules) |module_path| {
         const module_test = b.addTest(.{
-            .root_source_file = b.path(module_path),
-            .target = target,
-            .optimize = optimize,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(module_path),
+                .target = target,
+                .optimize = optimize,
+            }),
         });
-        
+
         // Add libxev dependency to tests
         module_test.root_module.addImport("xev", libxev.module("xev"));
 
