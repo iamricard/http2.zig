@@ -8602,7 +8602,7 @@ pub fn sk_SSL_CIPHER_call_copy_func(arg_copy_func: OPENSSL_sk_copy_func, arg_ptr
     _ = &copy_func;
     var ptr = arg_ptr;
     _ = &ptr;
-    return @as(?*anyopaque, @ptrCast(@volatileCast(@constCast(@as(sk_SSL_CIPHER_copy_func, @ptrCast(@alignCast(copy_func))).?(@as(?*const SSL_CIPHER, @ptrCast(ptr)))))));
+    return @as(?*anyopaque, @ptrCast(@constCast(@volatileCast(@as(sk_SSL_CIPHER_copy_func, @ptrCast(@alignCast(copy_func))).?(@as(?*const SSL_CIPHER, @ptrCast(ptr)))))));
 }
 pub fn sk_SSL_CIPHER_call_cmp_func(arg_cmp_func: OPENSSL_sk_cmp_func, arg_a: ?*const anyopaque, arg_b: ?*const anyopaque) callconv(.c) c_int {
     var cmp_func = arg_cmp_func;
@@ -8658,7 +8658,7 @@ pub fn sk_SSL_CIPHER_set(arg_sk: ?*struct_stack_st_SSL_CIPHER, arg_i: usize, arg
     _ = &i;
     var p = arg_p;
     _ = &p;
-    return @as(?*const SSL_CIPHER, @ptrCast(OPENSSL_sk_set(@as(?*OPENSSL_STACK, @ptrCast(sk)), i, @as(?*anyopaque, @ptrCast(@volatileCast(@constCast(p)))))));
+    return @as(?*const SSL_CIPHER, @ptrCast(OPENSSL_sk_set(@as(?*OPENSSL_STACK, @ptrCast(sk)), i, @as(?*anyopaque, @ptrCast(@constCast(@volatileCast(p)))))));
 }
 pub fn sk_SSL_CIPHER_free(arg_sk: ?*struct_stack_st_SSL_CIPHER) callconv(.c) void {
     var sk = arg_sk;
@@ -8679,7 +8679,7 @@ pub fn sk_SSL_CIPHER_insert(arg_sk: ?*struct_stack_st_SSL_CIPHER, arg_p: ?*const
     _ = &p;
     var where = arg_where;
     _ = &where;
-    return OPENSSL_sk_insert(@as(?*OPENSSL_STACK, @ptrCast(sk)), @as(?*anyopaque, @ptrCast(@volatileCast(@constCast(p)))), where);
+    return OPENSSL_sk_insert(@as(?*OPENSSL_STACK, @ptrCast(sk)), @as(?*anyopaque, @ptrCast(@constCast(@volatileCast(p)))), where);
 }
 pub fn sk_SSL_CIPHER_delete(arg_sk: ?*struct_stack_st_SSL_CIPHER, arg_where: usize) callconv(.c) ?*const SSL_CIPHER {
     var sk = arg_sk;
@@ -8723,7 +8723,7 @@ pub fn sk_SSL_CIPHER_push(arg_sk: ?*struct_stack_st_SSL_CIPHER, arg_p: ?*const S
     _ = &sk;
     var p = arg_p;
     _ = &p;
-    return OPENSSL_sk_push(@as(?*OPENSSL_STACK, @ptrCast(sk)), @as(?*anyopaque, @ptrCast(@volatileCast(@constCast(p)))));
+    return OPENSSL_sk_push(@as(?*OPENSSL_STACK, @ptrCast(sk)), @as(?*anyopaque, @ptrCast(@constCast(@volatileCast(p)))));
 }
 pub fn sk_SSL_CIPHER_pop(arg_sk: ?*struct_stack_st_SSL_CIPHER) callconv(.c) ?*const SSL_CIPHER {
     var sk = arg_sk;
@@ -8977,7 +8977,7 @@ pub fn sk_SRTP_PROTECTION_PROFILE_call_copy_func(arg_copy_func: OPENSSL_sk_copy_
     _ = &copy_func;
     var ptr = arg_ptr;
     _ = &ptr;
-    return @as(?*anyopaque, @ptrCast(@volatileCast(@constCast(@as(sk_SRTP_PROTECTION_PROFILE_copy_func, @ptrCast(@alignCast(copy_func))).?(@as([*c]const SRTP_PROTECTION_PROFILE, @ptrCast(@alignCast(ptr))))))));
+    return @as(?*anyopaque, @ptrCast(@constCast(@volatileCast(@as(sk_SRTP_PROTECTION_PROFILE_copy_func, @ptrCast(@alignCast(copy_func))).?(@as([*c]const SRTP_PROTECTION_PROFILE, @ptrCast(@alignCast(ptr))))))));
 }
 pub fn sk_SRTP_PROTECTION_PROFILE_call_cmp_func(arg_cmp_func: OPENSSL_sk_cmp_func, arg_a: ?*const anyopaque, arg_b: ?*const anyopaque) callconv(.c) c_int {
     var cmp_func = arg_cmp_func;
@@ -9033,7 +9033,7 @@ pub fn sk_SRTP_PROTECTION_PROFILE_set(arg_sk: ?*struct_stack_st_SRTP_PROTECTION_
     _ = &i;
     var p = arg_p;
     _ = &p;
-    return @as([*c]const SRTP_PROTECTION_PROFILE, @ptrCast(@alignCast(OPENSSL_sk_set(@as(?*OPENSSL_STACK, @ptrCast(sk)), i, @as(?*anyopaque, @ptrCast(@volatileCast(@constCast(p))))))));
+    return @as([*c]const SRTP_PROTECTION_PROFILE, @ptrCast(@alignCast(OPENSSL_sk_set(@as(?*OPENSSL_STACK, @ptrCast(sk)), i, @as(?*anyopaque, @ptrCast(@constCast(@volatileCast(p))))))));
 }
 pub fn sk_SRTP_PROTECTION_PROFILE_free(arg_sk: ?*struct_stack_st_SRTP_PROTECTION_PROFILE) callconv(.c) void {
     var sk = arg_sk;
@@ -9054,7 +9054,7 @@ pub fn sk_SRTP_PROTECTION_PROFILE_insert(arg_sk: ?*struct_stack_st_SRTP_PROTECTI
     _ = &p;
     var where = arg_where;
     _ = &where;
-    return OPENSSL_sk_insert(@as(?*OPENSSL_STACK, @ptrCast(sk)), @as(?*anyopaque, @ptrCast(@volatileCast(@constCast(p)))), where);
+    return OPENSSL_sk_insert(@as(?*OPENSSL_STACK, @ptrCast(sk)), @as(?*anyopaque, @ptrCast(@constCast(@volatileCast(p)))), where);
 }
 pub fn sk_SRTP_PROTECTION_PROFILE_delete(arg_sk: ?*struct_stack_st_SRTP_PROTECTION_PROFILE, arg_where: usize) callconv(.c) [*c]const SRTP_PROTECTION_PROFILE {
     var sk = arg_sk;
@@ -9098,7 +9098,7 @@ pub fn sk_SRTP_PROTECTION_PROFILE_push(arg_sk: ?*struct_stack_st_SRTP_PROTECTION
     _ = &sk;
     var p = arg_p;
     _ = &p;
-    return OPENSSL_sk_push(@as(?*OPENSSL_STACK, @ptrCast(sk)), @as(?*anyopaque, @ptrCast(@volatileCast(@constCast(p)))));
+    return OPENSSL_sk_push(@as(?*OPENSSL_STACK, @ptrCast(sk)), @as(?*anyopaque, @ptrCast(@constCast(@volatileCast(p)))));
 }
 pub fn sk_SRTP_PROTECTION_PROFILE_pop(arg_sk: ?*struct_stack_st_SRTP_PROTECTION_PROFILE) callconv(.c) [*c]const SRTP_PROTECTION_PROFILE {
     var sk = arg_sk;
@@ -9590,10 +9590,10 @@ pub extern fn SSL_CTX_set_compliance_policy(ctx: ?*SSL_CTX, policy: enum_ssl_com
 pub extern fn SSL_set_compliance_policy(ssl: ?*SSL, policy: enum_ssl_compliance_policy_t) c_int;
 pub const __llvm__ = @as(c_int, 1);
 pub const __clang__ = @as(c_int, 1);
-pub const __clang_major__ = @as(c_int, 19);
+pub const __clang_major__ = @as(c_int, 21);
 pub const __clang_minor__ = @as(c_int, 1);
-pub const __clang_patchlevel__ = @as(c_int, 7);
-pub const __clang_version__ = "19.1.7 (https://github.com/ziglang/zig-bootstrap 1c3c59435891bc9caf8cd1d3783773369d191c5f)";
+pub const __clang_patchlevel__ = @as(c_int, 0);
+pub const __clang_version__ = "21.1.0 (https://github.com/ziglang/zig-bootstrap ff9c6597b811192726b277fccc9d4d6f434f3a75)";
 pub const __GNUC__ = @as(c_int, 4);
 pub const __GNUC_MINOR__ = @as(c_int, 2);
 pub const __GNUC_PATCHLEVEL__ = @as(c_int, 1);
@@ -9625,7 +9625,7 @@ pub const __FPCLASS_POSSUBNORMAL = @as(c_int, 0x0080);
 pub const __FPCLASS_POSNORMAL = @as(c_int, 0x0100);
 pub const __FPCLASS_POSINF = @as(c_int, 0x0200);
 pub const __PRAGMA_REDEFINE_EXTNAME = @as(c_int, 1);
-pub const __VERSION__ = "Clang 19.1.7 (https://github.com/ziglang/zig-bootstrap 1c3c59435891bc9caf8cd1d3783773369d191c5f)";
+pub const __VERSION__ = "Clang 21.1.0 (https://github.com/ziglang/zig-bootstrap ff9c6597b811192726b277fccc9d4d6f434f3a75)";
 pub const __OBJC_BOOL_IS_BOOL = @as(c_int, 1);
 pub const __CONSTANT_CFSTRINGS__ = @as(c_int, 1);
 pub const __block = @compileError("unable to translate macro: undefined identifier `__blocks__`");
@@ -9641,7 +9641,7 @@ pub const __LITTLE_ENDIAN__ = @as(c_int, 1);
 pub const _LP64 = @as(c_int, 1);
 pub const __LP64__ = @as(c_int, 1);
 pub const __CHAR_BIT__ = @as(c_int, 8);
-pub const __BOOL_WIDTH__ = @as(c_int, 8);
+pub const __BOOL_WIDTH__ = @as(c_int, 1);
 pub const __SHRT_WIDTH__ = @as(c_int, 16);
 pub const __INT_WIDTH__ = @as(c_int, 32);
 pub const __LONG_WIDTH__ = @as(c_int, 64);
@@ -9686,13 +9686,15 @@ pub const __INTMAX_FMTd__ = "ld";
 pub const __INTMAX_FMTi__ = "li";
 pub const __INTMAX_C_SUFFIX__ = @compileError("unable to translate macro: undefined identifier `L`");
 // (no file):97:9
+pub const __INTMAX_C = @import("std").zig.c_translation.Macros.L_SUFFIX;
 pub const __UINTMAX_TYPE__ = c_ulong;
 pub const __UINTMAX_FMTo__ = "lo";
 pub const __UINTMAX_FMTu__ = "lu";
 pub const __UINTMAX_FMTx__ = "lx";
 pub const __UINTMAX_FMTX__ = "lX";
 pub const __UINTMAX_C_SUFFIX__ = @compileError("unable to translate macro: undefined identifier `UL`");
-// (no file):103:9
+// (no file):104:9
+pub const __UINTMAX_C = @import("std").zig.c_translation.Macros.UL_SUFFIX;
 pub const __PTRDIFF_TYPE__ = c_long;
 pub const __PTRDIFF_FMTd__ = "ld";
 pub const __PTRDIFF_FMTi__ = "li";
@@ -9781,25 +9783,42 @@ pub const __INT8_TYPE__ = i8;
 pub const __INT8_FMTd__ = "hhd";
 pub const __INT8_FMTi__ = "hhi";
 pub const __INT8_C_SUFFIX__ = "";
+pub inline fn __INT8_C(c: anytype) @TypeOf(c) {
+    _ = &c;
+    return c;
+}
 pub const __INT16_TYPE__ = c_short;
 pub const __INT16_FMTd__ = "hd";
 pub const __INT16_FMTi__ = "hi";
 pub const __INT16_C_SUFFIX__ = "";
+pub inline fn __INT16_C(c: anytype) @TypeOf(c) {
+    _ = &c;
+    return c;
+}
 pub const __INT32_TYPE__ = c_int;
 pub const __INT32_FMTd__ = "d";
 pub const __INT32_FMTi__ = "i";
 pub const __INT32_C_SUFFIX__ = "";
+pub inline fn __INT32_C(c: anytype) @TypeOf(c) {
+    _ = &c;
+    return c;
+}
 pub const __INT64_TYPE__ = c_longlong;
 pub const __INT64_FMTd__ = "lld";
 pub const __INT64_FMTi__ = "lli";
 pub const __INT64_C_SUFFIX__ = @compileError("unable to translate macro: undefined identifier `LL`");
-// (no file):203:9
+// (no file):208:9
+pub const __INT64_C = @import("std").zig.c_translation.Macros.LL_SUFFIX;
 pub const __UINT8_TYPE__ = u8;
 pub const __UINT8_FMTo__ = "hho";
 pub const __UINT8_FMTu__ = "hhu";
 pub const __UINT8_FMTx__ = "hhx";
 pub const __UINT8_FMTX__ = "hhX";
 pub const __UINT8_C_SUFFIX__ = "";
+pub inline fn __UINT8_C(c: anytype) @TypeOf(c) {
+    _ = &c;
+    return c;
+}
 pub const __UINT8_MAX__ = @as(c_int, 255);
 pub const __INT8_MAX__ = @as(c_int, 127);
 pub const __UINT16_TYPE__ = c_ushort;
@@ -9808,6 +9827,10 @@ pub const __UINT16_FMTu__ = "hu";
 pub const __UINT16_FMTx__ = "hx";
 pub const __UINT16_FMTX__ = "hX";
 pub const __UINT16_C_SUFFIX__ = "";
+pub inline fn __UINT16_C(c: anytype) @TypeOf(c) {
+    _ = &c;
+    return c;
+}
 pub const __UINT16_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_int, 65535, .decimal);
 pub const __INT16_MAX__ = @as(c_int, 32767);
 pub const __UINT32_TYPE__ = c_uint;
@@ -9816,7 +9839,8 @@ pub const __UINT32_FMTu__ = "u";
 pub const __UINT32_FMTx__ = "x";
 pub const __UINT32_FMTX__ = "X";
 pub const __UINT32_C_SUFFIX__ = @compileError("unable to translate macro: undefined identifier `U`");
-// (no file):225:9
+// (no file):233:9
+pub const __UINT32_C = @import("std").zig.c_translation.Macros.U_SUFFIX;
 pub const __UINT32_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_uint, 4294967295, .decimal);
 pub const __INT32_MAX__ = @import("std").zig.c_translation.promoteIntLiteral(c_int, 2147483647, .decimal);
 pub const __UINT64_TYPE__ = c_ulonglong;
@@ -9825,7 +9849,8 @@ pub const __UINT64_FMTu__ = "llu";
 pub const __UINT64_FMTx__ = "llx";
 pub const __UINT64_FMTX__ = "llX";
 pub const __UINT64_C_SUFFIX__ = @compileError("unable to translate macro: undefined identifier `ULL`");
-// (no file):233:9
+// (no file):242:9
+pub const __UINT64_C = @import("std").zig.c_translation.Macros.ULL_SUFFIX;
 pub const __UINT64_MAX__ = @as(c_ulonglong, 18446744073709551615);
 pub const __INT64_MAX__ = @as(c_longlong, 9223372036854775807);
 pub const __INT_LEAST8_TYPE__ = i8;
@@ -9917,12 +9942,12 @@ pub const __UINT_FAST64_FMTu__ = "llu";
 pub const __UINT_FAST64_FMTx__ = "llx";
 pub const __UINT_FAST64_FMTX__ = "llX";
 pub const __USER_LABEL_PREFIX__ = @compileError("unable to translate macro: undefined identifier `_`");
-// (no file):324:9
+// (no file):334:9
 pub const __NO_MATH_ERRNO__ = @as(c_int, 1);
 pub const __FINITE_MATH_ONLY__ = @as(c_int, 0);
 pub const __GNUC_STDC_INLINE__ = @as(c_int, 1);
 pub const __GCC_ATOMIC_TEST_AND_SET_TRUEVAL = @as(c_int, 1);
-pub const __GCC_DESTRUCTIVE_SIZE = @as(c_int, 64);
+pub const __GCC_DESTRUCTIVE_SIZE = @as(c_int, 256);
 pub const __GCC_CONSTRUCTIVE_SIZE = @as(c_int, 64);
 pub const __CLANG_ATOMIC_BOOL_LOCK_FREE = @as(c_int, 2);
 pub const __CLANG_ATOMIC_CHAR_LOCK_FREE = @as(c_int, 2);
@@ -9951,11 +9976,11 @@ pub const __FLT_RADIX__ = @as(c_int, 2);
 pub const __DECIMAL_DIG__ = __LDBL_DECIMAL_DIG__;
 pub const __SSP_STRONG__ = @as(c_int, 2);
 pub const __nonnull = @compileError("unable to translate macro: undefined identifier `_Nonnull`");
-// (no file):359:9
+// (no file):369:9
 pub const __null_unspecified = @compileError("unable to translate macro: undefined identifier `_Null_unspecified`");
-// (no file):360:9
+// (no file):370:9
 pub const __nullable = @compileError("unable to translate macro: undefined identifier `_Nullable`");
-// (no file):361:9
+// (no file):371:9
 pub const TARGET_OS_WIN32 = @as(c_int, 0);
 pub const TARGET_OS_WINDOWS = @as(c_int, 0);
 pub const TARGET_OS_LINUX = @as(c_int, 0);
@@ -9974,11 +9999,19 @@ pub const TARGET_OS_EMBEDDED = @as(c_int, 0);
 pub const TARGET_OS_NANO = @as(c_int, 0);
 pub const TARGET_IPHONE_SIMULATOR = @as(c_int, 0);
 pub const TARGET_OS_UIKITFORMAC = @as(c_int, 0);
+pub const TARGET_OS_UEFI = @as(c_int, 0);
 pub const __AARCH64EL__ = @as(c_int, 1);
 pub const __aarch64__ = @as(c_int, 1);
 pub const __GCC_ASM_FLAG_OUTPUTS__ = @as(c_int, 1);
 pub const __AARCH64_CMODEL_SMALL__ = @as(c_int, 1);
-pub const __ARM_ACLE = @as(c_int, 200);
+pub inline fn __ARM_ACLE_VERSION(year: anytype, quarter: anytype, patch: anytype) @TypeOf(((@as(c_int, 100) * year) + (@as(c_int, 10) * quarter)) + patch) {
+    _ = &year;
+    _ = &quarter;
+    _ = &patch;
+    return ((@as(c_int, 100) * year) + (@as(c_int, 10) * quarter)) + patch;
+}
+pub const __ARM_ACLE = @import("std").zig.c_translation.promoteIntLiteral(c_int, 202420, .decimal);
+pub const __FUNCTION_MULTI_VERSIONING_SUPPORT_LEVEL = @import("std").zig.c_translation.promoteIntLiteral(c_int, 202430, .decimal);
 pub const __ARM_ARCH = @as(c_int, 8);
 pub const __ARM_ARCH_PROFILE = 'A';
 pub const __ARM_64BIT_STATE = @as(c_int, 1);
@@ -9997,13 +10030,11 @@ pub const __ARM_STATE_ZT0 = @as(c_int, 1);
 pub const __ARM_FP = @as(c_int, 0xE);
 pub const __ARM_FP16_FORMAT_IEEE = @as(c_int, 1);
 pub const __ARM_FP16_ARGS = @as(c_int, 1);
+pub const __ARM_NEON_SVE_BRIDGE = @as(c_int, 1);
 pub const __ARM_SIZEOF_WCHAR_T = @as(c_int, 4);
 pub const __ARM_SIZEOF_MINIMAL_ENUM = @as(c_int, 4);
 pub const __ARM_NEON = @as(c_int, 1);
 pub const __ARM_NEON_FP = @as(c_int, 0xE);
-pub const __ARM_FEATURE_SME = @as(c_int, 1);
-pub const __ARM_FEATURE_LOCALLY_STREAMING = @as(c_int, 1);
-pub const __ARM_FEATURE_SME2 = @as(c_int, 1);
 pub const __ARM_FEATURE_CRC32 = @as(c_int, 1);
 pub const __ARM_FEATURE_RCPC = @as(c_int, 1);
 pub const __ARM_FEATURE_CRYPTO = @as(c_int, 1);
@@ -10012,19 +10043,12 @@ pub const __ARM_FEATURE_SHA2 = @as(c_int, 1);
 pub const __ARM_FEATURE_SHA3 = @as(c_int, 1);
 pub const __ARM_FEATURE_SHA512 = @as(c_int, 1);
 pub const __ARM_FEATURE_PAUTH = @as(c_int, 1);
-pub const __ARM_FEATURE_BTI = @as(c_int, 1);
 pub const __ARM_FEATURE_UNALIGNED = @as(c_int, 1);
 pub const __ARM_FEATURE_FP16_VECTOR_ARITHMETIC = @as(c_int, 1);
 pub const __ARM_FEATURE_FP16_SCALAR_ARITHMETIC = @as(c_int, 1);
 pub const __ARM_FEATURE_DOTPROD = @as(c_int, 1);
-pub const __ARM_FEATURE_MATMUL_INT8 = @as(c_int, 1);
 pub const __ARM_FEATURE_ATOMICS = @as(c_int, 1);
-pub const __ARM_FEATURE_BF16 = @as(c_int, 1);
-pub const __ARM_FEATURE_BF16_VECTOR_ARITHMETIC = @as(c_int, 1);
-pub const __ARM_BF16_FORMAT_ALTERNATIVE = @as(c_int, 1);
-pub const __ARM_FEATURE_BF16_SCALAR_ARITHMETIC = @as(c_int, 1);
 pub const __ARM_FEATURE_FP16_FML = @as(c_int, 1);
-pub const __ARM_FEATURE_FRINT = @as(c_int, 1);
 pub const __ARM_FEATURE_COMPLEX = @as(c_int, 1);
 pub const __ARM_FEATURE_JCVT = @as(c_int, 1);
 pub const __ARM_FEATURE_QRDMX = @as(c_int, 1);
@@ -10043,15 +10067,15 @@ pub const __arm64 = @as(c_int, 1);
 pub const __arm64__ = @as(c_int, 1);
 pub const __APPLE_CC__ = @as(c_int, 6000);
 pub const __APPLE__ = @as(c_int, 1);
-pub const __STDC_NO_THREADS__ = @as(c_int, 1);
 pub const __weak = @compileError("unable to translate macro: undefined identifier `objc_gc`");
-// (no file):450:9
+// (no file):453:9
 pub const __strong = "";
 pub const __unsafe_unretained = "";
 pub const __DYNAMIC__ = @as(c_int, 1);
-pub const __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ = @import("std").zig.c_translation.promoteIntLiteral(c_int, 150500, .decimal);
-pub const __ENVIRONMENT_OS_VERSION_MIN_REQUIRED__ = @import("std").zig.c_translation.promoteIntLiteral(c_int, 150500, .decimal);
 pub const __MACH__ = @as(c_int, 1);
+pub const __STDC_NO_THREADS__ = @as(c_int, 1);
+pub const __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ = @import("std").zig.c_translation.promoteIntLiteral(c_int, 150601, .decimal);
+pub const __ENVIRONMENT_OS_VERSION_MIN_REQUIRED__ = @import("std").zig.c_translation.promoteIntLiteral(c_int, 150601, .decimal);
 pub const __STDC__ = @as(c_int, 1);
 pub const __STDC_HOSTED__ = @as(c_int, 1);
 pub const __STDC_VERSION__ = @as(c_long, 201710);
@@ -10060,7 +10084,6 @@ pub const __STDC_UTF_32__ = @as(c_int, 1);
 pub const __STDC_EMBED_NOT_FOUND__ = @as(c_int, 0);
 pub const __STDC_EMBED_FOUND__ = @as(c_int, 1);
 pub const __STDC_EMBED_EMPTY__ = @as(c_int, 2);
-pub const _DEBUG = @as(c_int, 1);
 pub const __GCC_HAVE_DWARF2_CFI_ASM = @as(c_int, 1);
 pub const OPENSSL_HEADER_SSL_H = "";
 pub const OPENSSL_HEADER_BASE_H = "";
@@ -10077,7 +10100,7 @@ pub const _WCHAR_T = "";
 pub const NULL = @import("std").zig.c_translation.cast(?*anyopaque, @as(c_int, 0));
 pub const __CLANG_MAX_ALIGN_T_DEFINED = "";
 pub const offsetof = @compileError("unable to translate C expr: unexpected token 'an identifier'");
-// /Users/hendriknielander/.zm/version/zig/0.14.0/lib/include/__stddef_offsetof.h:16:9
+// /Users/iamricard/.zvm/master/lib/include/__stddef_offsetof.h:16:9
 pub const __CLANG_STDINT_H = "";
 pub const _STDINT_H_ = "";
 pub const __WORDSIZE = @as(c_int, 64);
@@ -27381,15 +27404,15 @@ pub const __STDARG_H = "";
 pub const __GNUC_VA_LIST = "";
 pub const _VA_LIST = "";
 pub const va_start = @compileError("unable to translate macro: undefined identifier `__builtin_va_start`");
-// /Users/hendriknielander/.zm/version/zig/0.14.0/lib/include/__stdarg_va_arg.h:17:9
+// /Users/iamricard/.zvm/master/lib/include/__stdarg_va_arg.h:17:9
 pub const va_end = @compileError("unable to translate macro: undefined identifier `__builtin_va_end`");
-// /Users/hendriknielander/.zm/version/zig/0.14.0/lib/include/__stdarg_va_arg.h:19:9
+// /Users/iamricard/.zvm/master/lib/include/__stdarg_va_arg.h:19:9
 pub const va_arg = @compileError("unable to translate C expr: unexpected token 'an identifier'");
-// /Users/hendriknielander/.zm/version/zig/0.14.0/lib/include/__stdarg_va_arg.h:20:9
+// /Users/iamricard/.zvm/master/lib/include/__stdarg_va_arg.h:20:9
 pub const __va_copy = @compileError("unable to translate macro: undefined identifier `__builtin_va_copy`");
-// /Users/hendriknielander/.zm/version/zig/0.14.0/lib/include/__stdarg___va_copy.h:11:9
+// /Users/iamricard/.zvm/master/lib/include/__stdarg___va_copy.h:11:9
 pub const va_copy = @compileError("unable to translate macro: undefined identifier `__builtin_va_copy`");
-// /Users/hendriknielander/.zm/version/zig/0.14.0/lib/include/__stdarg_va_copy.h:11:9
+// /Users/iamricard/.zvm/master/lib/include/__stdarg_va_copy.h:11:9
 pub inline fn DECIMAL_SIZE(@"type": anytype) @TypeOf(@import("std").zig.c_translation.MacroArithmetic.div((@import("std").zig.c_translation.sizeof(@"type") * @as(c_int, 8)) + @as(c_int, 2), @as(c_int, 3)) + @as(c_int, 1)) {
     _ = &@"type";
     return @import("std").zig.c_translation.MacroArithmetic.div((@import("std").zig.c_translation.sizeof(@"type") * @as(c_int, 8)) + @as(c_int, 2), @as(c_int, 3)) + @as(c_int, 1);

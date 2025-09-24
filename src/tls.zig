@@ -1,5 +1,6 @@
 const std = @import("std");
 const boringssl = @import("bindings/boringssl-bindings.zig");
+const Io = std.Io;
 
 /// TLS operation errors.
 /// These errors cover initialization, handshake, and I/O failures.
@@ -68,7 +69,7 @@ pub const TlsServerContext = struct {
 
         // Let BoringSSL and LibreSSL negotiate TLS version naturally
         // Don't force specific versions
-        
+
         // Use broader cipher suite for compatibility
         const cipher_list = "ECDHE-RSA-AES128-GCM-SHA256:AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384";
         if (boringssl.SSL_CTX_set_cipher_list(ctx_ptr, cipher_list.ptr) != 1) {
@@ -153,11 +154,11 @@ pub const TlsServerContext = struct {
     /// Sets the ALPN protocols on the server context to exactly the given `alpn_proto` (e.g. "h2").
     fn set_alpn(self: *TlsServerContext, alpn_proto: []const u8) !void {
         _ = alpn_proto; // Ignore single protocol parameter, we'll advertise both
-        
+
         // Advertise both h2 and http/1.1 using SSL_CTX_set_alpn_protos
         // Wire format: [2, 'h', '2', 8, 'h', 't', 't', 'p', '/', '1', '.', '1']
         const protocols = [_]u8{ 2, 'h', '2', 8, 'h', 't', 't', 'p', '/', '1', '.', '1' };
-        
+
         const rc = boringssl.SSL_CTX_set_alpn_protos(
             self.ctx,
             &protocols,
@@ -166,7 +167,7 @@ pub const TlsServerContext = struct {
         if (rc != 0) {
             return TlsError.InitFailed;
         }
-        
+
         // Also set callback for protocol selection priority (h2 preferred)
         const callback = struct {
             fn alpn_select_callback(
@@ -176,7 +177,7 @@ pub const TlsServerContext = struct {
                 input: [*c]const u8,
                 inlen: c_uint,
                 arg: ?*anyopaque,
-            ) callconv(.C) c_int {
+            ) callconv(.c) c_int {
                 _ = ssl;
                 _ = arg;
 
@@ -184,7 +185,7 @@ pub const TlsServerContext = struct {
                 var protocol_index: c_uint = 0;
                 while (protocol_index < inlen) {
                     if (protocol_index >= inlen) break;
-                    
+
                     const protocol_length = input[protocol_index];
                     if (protocol_index + 1 + protocol_length > inlen) break;
 
@@ -199,12 +200,12 @@ pub const TlsServerContext = struct {
 
                     protocol_index += 1 + protocol_length;
                 }
-                
+
                 // Search for http/1.1 (fallback)
                 protocol_index = 0;
                 while (protocol_index < inlen) {
                     if (protocol_index >= inlen) break;
-                    
+
                     const protocol_length = input[protocol_index];
                     if (protocol_index + 1 + protocol_length > inlen) break;
 
@@ -249,10 +250,10 @@ pub const TlsServerContext = struct {
         std.debug.assert(max_cert_size > 0);
         std.debug.assert(max_key_size > 0);
 
-        const certificate_data = try std.fs.cwd().readFileAlloc(self.allocator, cert_path, max_cert_size);
+        const certificate_data = try std.fs.cwd().readFileAlloc(cert_path, self.allocator, .limited(max_cert_size));
         defer self.allocator.free(certificate_data);
 
-        const private_key_data = try std.fs.cwd().readFileAlloc(self.allocator, key_path, max_key_size);
+        const private_key_data = try std.fs.cwd().readFileAlloc(key_path, self.allocator, .limited(max_key_size));
         defer self.allocator.free(private_key_data);
 
         // Load certificate from in‐memory bytes with bounds checking
@@ -403,22 +404,22 @@ pub const TlsServerConnection = struct {
     pub fn isHandshakeComplete(self: *TlsServerConnection) bool {
         return self.handshake_state == .complete;
     }
-    
+
     /// Get the negotiated ALPN protocol
     pub fn getNegotiatedProtocol(self: *TlsServerConnection) ?[]const u8 {
         if (self.ssl == null) {
             return null;
         }
-        
+
         var data: [*c]const u8 = undefined;
         var len: c_uint = undefined;
-        
+
         boringssl.SSL_get0_alpn_selected(self.ssl, &data, &len);
-        
+
         if (len == 0 or data == null) {
             return null;
         }
-        
+
         return data[0..len];
     }
 
@@ -465,116 +466,170 @@ pub const TlsServerConnection = struct {
         return pending > 0;
     }
 
-    /// Provide a std.io.Reader interface to read from TLS.
-    pub fn reader(self: *TlsServerConnection) std.io.Reader(*TlsServerConnection, TlsError, readFn) {
-        return .{ .context = self };
+    /// Provide a Io.Reader interface to read from TLS.
+    pub fn reader(self: TlsServerConnection, buffer: []u8) Reader {
+        return .init(self.ssl, buffer);
     }
 
-    fn readFn(self: *TlsServerConnection, buffer: []u8) TlsError!usize {
-        return self.read_tls(buffer);
-    }
-
-    /// Provide a std.io.Writer interface to write to TLS.
-    pub fn writer(self: *TlsServerConnection) std.io.Writer(*TlsServerConnection, TlsError, writeFn) {
-        return .{ .context = self };
-    }
-
-    fn writeFn(self: *TlsServerConnection, data: []const u8) TlsError!usize {
-        self.write_tls(data) catch |err| return err;
-        return data.len;
+    /// Provide a Io.Writer interface to write to TLS.
+    pub fn writer(self: TlsServerConnection, buffer: []u8) Writer {
+        return .init(self.ssl, buffer);
     }
 
     /// A single SSL_read call. Returns bytes read, or an error.
-    fn read_tls(self: *TlsServerConnection, read_buffer: []u8) !usize {
-        // Assert valid SSL context and buffer
-        std.debug.assert(self.ssl != null);
-        std.debug.assert(read_buffer.len <= std.math.maxInt(c_int));
+    pub const Reader = struct {
+        interface: Io.Reader,
+        err: ?TlsError,
+        ssl: ?*boringssl.SSL,
 
-        if (self.ssl == null) {
-            return TlsError.InvalidContext;
-        }
-        if (read_buffer.len == 0) {
-            return 0;
-        }
-
-        const ssl_connection = self.ssl.?;
-        const buffer_length: c_int = @intCast(read_buffer.len);
-        const bytes_read_count = boringssl.SSL_read(ssl_connection, read_buffer.ptr, buffer_length);
-
-        if (bytes_read_count > 0) {
-            // The function returns !usize, so let the compiler infer `usize` for @intCast.
-            return @intCast(bytes_read_count);
-        }
-
-        // For <=0 return, check the error code.
-        const ssl_error_code = boringssl.SSL_get_error(ssl_connection, bytes_read_count);
-
-        switch (ssl_error_code) {
-            boringssl.SSL_ERROR_WANT_READ => {
-                return TlsError.WouldBlock;
-            },
-            boringssl.SSL_ERROR_WANT_WRITE => {
-                return TlsError.WouldBlock;
-            },
-            boringssl.SSL_ERROR_ZERO_RETURN => {
-                // Clean shutdown - client closed the TLS connection
-                std.log.debug("TLS connection closed cleanly by client", .{});
-                return TlsError.ConnectionClosed;
-            },
-            boringssl.SSL_ERROR_SYSCALL => {
-                // System call error - could be connection closed
-                if (bytes_read_count == 0) {
-                    std.log.debug("TLS connection closed by client (SYSCALL)", .{});
-                    return TlsError.ConnectionClosed;
-                } else {
-                    std.log.err("SSL_read SYSCALL error: {}", .{ssl_error_code});
-                    return TlsError.ReadFailed;
-                }
-            },
-            boringssl.SSL_ERROR_SSL => {
-                // SSL protocol error - could be connection reset by peer
-                std.log.debug("SSL protocol error (connection likely closed by client): {}", .{ssl_error_code});
-                return TlsError.ConnectionClosed;
-            },
-            else => {
-                std.log.err("SSL_read failed with error: {}", .{ssl_error_code});
-                return TlsError.ReadFailed;
-            },
-        }
-    }
-
-    /// Write all `data` through SSL_write until fully consumed or error.
-    fn write_tls(self: *TlsServerConnection, write_data: []const u8) !void {
-        // Assert valid SSL context and data size
-        std.debug.assert(self.ssl != null);
-        std.debug.assert(write_data.len <= std.math.maxInt(c_int));
-
-        if (self.ssl == null) {
-            return TlsError.InvalidContext;
-        }
-        var bytes_written_offset: u32 = 0;
-        while (bytes_written_offset < write_data.len) {
-            const ssl_connection = self.ssl.?;
-            const remaining_bytes = write_data.len - bytes_written_offset;
-            const remaining_bytes_int: c_int = @intCast(remaining_bytes);
-            const bytes_written_count = boringssl.SSL_write(ssl_connection, write_data.ptr + bytes_written_offset, remaining_bytes_int);
-            if (bytes_written_count <= 0) {
-                const ssl_error_code = boringssl.SSL_get_error(ssl_connection, bytes_written_count);
-                switch (ssl_error_code) {
-                    boringssl.SSL_ERROR_WANT_READ, boringssl.SSL_ERROR_WANT_WRITE => return TlsError.WouldBlock,
-                    else => {
-                        const error_message =
-                            boringssl.ERR_error_string(@intCast(ssl_error_code), null);
-                        std.debug.print(
-                            "SSL_write error: code={d} msg={s}\n",
-                            .{ ssl_error_code, error_message },
-                        );
-                        return TlsError.WriteFailed;
+        fn init(ssl: ?*boringssl.SSL, buffer: []u8) Reader {
+            return .{
+                .ssl = ssl,
+                .err = null,
+                .interface = .{
+                    .buffer = buffer,
+                    .seek = 0,
+                    .end = 0,
+                    .vtable = &.{
+                        .stream = stream,
+                        // .readVec = read_tls,
                     },
-                }
-            }
-            // Increase offset by the number of bytes written, cast to u32.
-            bytes_written_offset += @intCast(bytes_written_count);
+                },
+            };
         }
-    }
+
+        fn stream(io_r: *Io.Reader, io_w: *Io.Writer, limit: Io.Limit) !usize {
+            const self: *@This() = @fieldParentPtr("interface", io_r);
+            const data = limit.slice(io_r.buffer[io_r.seek..io_r.end]);
+
+            // Assert valid SSL context and buffer
+            std.debug.assert(self.ssl != null);
+            std.debug.assert(data.len <= std.math.maxInt(c_int));
+
+            if (self.ssl == null) {
+                self.err = error.InvalidContext;
+                return error.ReadFailed;
+            }
+            if (data.len == 0) {
+                return 0;
+            }
+
+            const ssl_connection = self.ssl.?;
+            const buffer_length: c_int = @intCast(io_w.buffer.len);
+
+            const bytes_read_count = boringssl.SSL_read(ssl_connection, io_w.buffer.ptr, buffer_length);
+
+            if (bytes_read_count > 0) {
+                // The function returns !usize, so let the compiler infer `usize` for @intCast.
+                return @intCast(bytes_read_count);
+            }
+
+            // For <=0 return, check the error code.
+            const ssl_error_code = boringssl.SSL_get_error(ssl_connection, bytes_read_count);
+
+            switch (ssl_error_code) {
+                boringssl.SSL_ERROR_WANT_READ => {
+                    self.err = error.WouldBlock;
+                    return error.ReadFailed;
+                },
+                boringssl.SSL_ERROR_WANT_WRITE => {
+                    self.err = error.WouldBlock;
+                    return error.ReadFailed;
+                },
+                boringssl.SSL_ERROR_ZERO_RETURN => {
+                    // Clean shutdown - client closed the TLS connection
+                    std.log.debug("TLS connection closed cleanly by client", .{});
+                    self.err = error.ConnectionClosed;
+                    return error.ReadFailed;
+                },
+                boringssl.SSL_ERROR_SYSCALL => {
+                    // System call error - could be connection closed
+                    if (bytes_read_count == 0) {
+                        std.log.debug("TLS connection closed by client (SYSCALL)", .{});
+                        self.err = error.ConnectionClosed;
+                        return error.ReadFailed;
+                    } else {
+                        std.log.err("SSL_read SYSCALL error: {}", .{ssl_error_code});
+                        self.err = error.ReadFailed;
+                        return error.ReadFailed;
+                    }
+                },
+                boringssl.SSL_ERROR_SSL => {
+                    // SSL protocol error - could be connection reset by peer
+                    std.log.debug("SSL protocol error (connection likely closed by client): {}", .{ssl_error_code});
+                    self.err = error.ConnectionClosed;
+                    return error.ReadFailed;
+                },
+                else => {
+                    std.log.err("SSL_read failed with error: {}", .{ssl_error_code});
+                    self.err = error.ReadFailed;
+                    return error.ReadFailed;
+                },
+            }
+        }
+    };
+
+    pub const Writer = struct {
+        interface: Io.Writer,
+        ssl: ?*boringssl.SSL,
+        err: ?TlsError,
+
+        fn init(ssl: ?*boringssl.SSL, buffer: []u8) Writer {
+            return .{
+                .ssl = ssl,
+                .err = null,
+                .interface = .{
+                    .buffer = buffer,
+                    .vtable = &.{
+                        .drain = drain,
+                    },
+                },
+            };
+        }
+
+        /// Write all `data` through SSL_write until fully consumed or error.
+        fn drain(io_w: *Io.Writer, chunks: []const []const u8, splat: usize) !usize {
+            _ = splat;
+            const self: *@This() = @fieldParentPtr("interface", io_w);
+            const data = chunks[0];
+
+            // Assert valid SSL context and data size
+            std.debug.assert(self.ssl != null);
+            std.debug.assert(data.len <= std.math.maxInt(c_int));
+
+            if (self.ssl == null) {
+                self.err = error.InvalidContext;
+                return error.WriteFailed;
+            }
+            var bytes_written_offset: u32 = 0;
+            while (bytes_written_offset < data.len) {
+                const ssl_connection = self.ssl.?;
+                const remaining_bytes = data.len - bytes_written_offset;
+                const remaining_bytes_int: c_int = @intCast(remaining_bytes);
+                const bytes_written_count = boringssl.SSL_write(ssl_connection, data.ptr + bytes_written_offset, remaining_bytes_int);
+                if (bytes_written_count <= 0) {
+                    const ssl_error_code = boringssl.SSL_get_error(ssl_connection, bytes_written_count);
+                    switch (ssl_error_code) {
+                        boringssl.SSL_ERROR_WANT_READ, boringssl.SSL_ERROR_WANT_WRITE => {
+                            self.err = error.WouldBlock;
+                            return error.WriteFailed;
+                        },
+                        else => {
+                            const error_message =
+                                boringssl.ERR_error_string(@intCast(ssl_error_code), null);
+                            std.debug.print(
+                                "SSL_write error: code={d} msg={s}\n",
+                                .{ ssl_error_code, error_message },
+                            );
+                            self.err = error.WriteFailed;
+                            return error.WriteFailed;
+                        },
+                    }
+                }
+                // Increase offset by the number of bytes written, cast to u32.
+                bytes_written_offset += @intCast(bytes_written_count);
+            }
+            return bytes_written_offset;
+        }
+    };
 };

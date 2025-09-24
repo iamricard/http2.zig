@@ -170,7 +170,7 @@ pub const Server = struct {
             .accept_completions = [2]xev.Completion{ .{}, .{} },
             .current_accept_completion = std.atomic.Value(u8).init(0),
             .accept_active = std.atomic.Value(bool).init(false),
-            .connections = std.ArrayList(*Connection).init(allocator),
+            .connections = std.array_list.Managed(*Connection).init(allocator),
             .connection_pool = try ConnectionPool.init(allocator, config.max_connections, config.buffer_size),
             .stats = Stats.init(),
         };
@@ -195,10 +195,10 @@ pub const Server = struct {
         try self.server_tcp.listen(4096);
 
         if (self.tls_ctx) |_| {
-            std.log.info("Libxev HTTP/2 over TLS server listening on {} (cross-platform)", .{self.config.address});
+            std.log.info("Libxev HTTP/2 over TLS server listening on {f} (cross-platform)", .{self.config.address});
             std.log.info("TLS with ALPN h2 negotiation enabled for browsers", .{});
         } else {
-            std.log.info("Libxev HTTP/2 server listening on {} (cross-platform)", .{self.config.address});
+            std.log.info("Libxev HTTP/2 server listening on {f} (cross-platform)", .{self.config.address});
         }
 
         // Start accepting connections
@@ -275,7 +275,7 @@ pub const Server = struct {
         self.accept_active.store(false, .release);
 
         const client_tcp = result catch |err| {
-            std.log.warn("Accept failed: {}", .{err});
+            std.log.warn("Accept failed: {any}", .{err});
             self.scheduleAcceptRetry();
             return .disarm;
         };
@@ -355,7 +355,7 @@ pub const Server = struct {
             .tls_write_pending = std.atomic.Value(bool).init(false),
             .tls_operation_scheduled = std.atomic.Value(bool).init(false),
             .tls_write_retry_count = std.atomic.Value(u32).init(0),
-            .tls_write_queue = std.ArrayList([]u8).init(self.allocator),
+            .tls_write_queue = std.array_list.Managed([]u8).init(self.allocator),
             .tls_queue_mutex = std.Thread.Mutex{},
         };
 
@@ -369,7 +369,7 @@ pub const Server = struct {
         std.debug.assert(conn.active);
 
         self.connections.append(conn) catch |err| {
-            std.log.warn("Failed to track connection: {}", .{err});
+            std.log.warn("Failed to track connection: {any}", .{err});
             return err;
         };
     }
@@ -392,7 +392,7 @@ pub const Server = struct {
         const total_before = self.stats.total_connections.fetchAdd(1, .monotonic);
         const active_before = self.stats.active_connections.fetchAdd(1, .monotonic);
 
-        std.log.info("Accepted new connection {} (total: {}, active: {})", .{ conn.tcp.fd, total_before + 1, active_before + 1 });
+        std.log.info("Accepted new connection {d} (total: {d}, active: {d})", .{ conn.tcp.fd, total_before + 1, active_before + 1 });
 
         // Assert reasonable connection counts.
         std.debug.assert(total_before < std.math.maxInt(u32));
@@ -1151,8 +1151,7 @@ const Connection = struct {
     /// Send HTTP/1.1 response
     fn sendHttp11Response(self: *Self, response: *const handler.Response) !void {
         var response_buffer: [8192]u8 = undefined;
-        var fbs = std.io.fixedBufferStream(&response_buffer);
-        const writer = fbs.writer();
+        var writer: std.Io.Writer = .fixed(&response_buffer);
 
         // Status line
         const status_text = switch (response.status) {
@@ -1192,7 +1191,7 @@ const Connection = struct {
         try writer.writeAll(response.body);
 
         // Write to connection
-        const response_data = fbs.getWritten();
+        const response_data = writer.buffered();
         if (self.write_pos + response_data.len > self.write_buffer.len) {
             return error.WriteBufferFull;
         }
@@ -1210,8 +1209,7 @@ const Connection = struct {
     /// Send HTTP/1.1 error response
     fn sendHttp11Error(self: *Self, status_code: u16, status_text: []const u8) !void {
         var response_buffer: [1024]u8 = undefined;
-        var fbs = std.io.fixedBufferStream(&response_buffer);
-        const writer = fbs.writer();
+        var writer: std.Io.Writer = .fixed(&response_buffer);
 
         const body = try std.fmt.allocPrint(self.server.allocator, "<html><body><h1>{} {s}</h1></body></html>", .{ status_code, status_text });
         defer self.server.allocator.free(body);
@@ -1223,7 +1221,7 @@ const Connection = struct {
         try writer.print("\r\n", .{});
         try writer.writeAll(body);
 
-        const response_data = fbs.getWritten();
+        const response_data = writer.buffered();
         if (self.write_pos + response_data.len > self.write_buffer.len) {
             return error.WriteBufferFull;
         }
@@ -1398,9 +1396,10 @@ const Connection = struct {
             defer self.server.allocator.free(data);
 
             // Write to TLS layer
-            const writer = tls_connection.writer();
-            writer.writeAll(data) catch |err| {
-                switch (err) {
+            var writer = tls_connection.writer(self.write_buffer);
+            writer.interface.writeAll(data) catch {
+                const e = writer.err orelse unreachable;
+                switch (e) {
                     error.WouldBlock => {
                         // Check retry count to prevent infinite loops
                         const retry_count = self.tls_write_retry_count.fetchAdd(1, .acq_rel);
@@ -1417,7 +1416,7 @@ const Connection = struct {
                         // Don't call scheduleTLSOperation here - let write callback handle it
                         return;
                     },
-                    else => {
+                    else => |err| {
                         std.log.err("TLS write failed in queue: {}", .{err});
                         // Remove failed item and reset retry count
                         _ = self.tls_write_queue.orderedRemove(0);
@@ -1666,20 +1665,20 @@ const Connection = struct {
 
             // Try to read decrypted application data (only after handshake is complete)
             if (self.tls_handshake_complete) {
-                const reader = tls_connection.reader();
+                var reader = tls_connection.reader(self.read_buffer);
                 const available_space = self.read_buffer.len - self.read_pos;
 
                 if (available_space > 0) {
-                    const tls_read_result = reader.read(self.read_buffer[self.read_pos .. self.read_pos + available_space]);
-
+                    const tls_read_result = reader.interface.readSliceShort(self.read_buffer[self.read_pos .. self.read_pos + available_space]);
                     if (tls_read_result) |bytes_read| {
                         // Successfully read some bytes
                         if (bytes_read > 0) {
                             self.read_pos += @intCast(bytes_read);
                             std.log.debug("Read {} bytes from TLS, read_pos now: {}", .{ bytes_read, self.read_pos });
                         }
-                    } else |err| {
-                        switch (err) {
+                    } else |_| {
+                        const e = reader.err orelse unreachable;
+                        switch (e) {
                             error.WouldBlock => {
                                 std.log.debug("TLS reader returned WouldBlock, available_space: {}, read_pos: {}", .{ available_space, self.read_pos });
                                 // Check if we need to send encrypted response data
@@ -1712,7 +1711,7 @@ const Connection = struct {
                                 self.server.closeConnection(self);
                                 return .disarm;
                             },
-                            else => {
+                            else => |err| {
                                 std.log.err("TLS application data read error: {}", .{err});
                                 self.server.closeConnection(self);
                                 return .disarm;
